@@ -1,0 +1,835 @@
+models:
+
+  - name: int_fee_per_100_usd
+    description: >
+      Internal model: dense bond-equivalent LP coupon curves per pool/day/range width.
+      Computes the daily, 7d, 30d, 90d fee yield for a hypothetical 100 token0 position
+      centered on the close tick for each range width in [50, 100, 200, 500, 1000, 2000] ticks.
+      Consumed by int_lp_macro_daily. Not a frontend mart.
+    columns:
+      - name: pool
+        tests: [not_null]
+      - name: date
+        tests: [not_null]
+      - name: range_width_ticks
+        tests: [not_null]
+      - name: tick_lower
+        tests: [not_null]
+      - name: tick_upper
+        tests: [not_null]
+      - name: close_price
+        tests: [not_null]
+      - name: close_tick
+        tests: [not_null]
+      - name: active_liquidity
+        tests: [not_null]
+      - name: active_tvl_token0
+        tests: [not_null]
+      - name: tvl_per_unit_L
+      - name: fee_per_100_token0_daily
+      - name: fee_per_100_token0_annual
+      - name: fee_per_100_token0_7d
+      - name: fee_per_100_token0_30d
+      - name: fee_per_100_token0_90d
+      - name: fee_bps_annual
+      - name: fee_bps_7d
+      - name: fee_bps_30d
+      - name: fee_bps_90d
+
+  - name: int_lp_macro_daily
+    description: >
+      Internal aggregator: dense daily LP macro per pool. Assembles TVL, volume, fees,
+      price analytics, LP flows, and range structure metrics on a single spine.
+      Consumed by mart_pool_screener_daily. Not a frontend mart.
+    columns:
+      - name: pool
+        tests: [not_null]
+      - name: date
+        tests: [not_null]
+      - name: close_price
+        tests: [not_null]
+      - name: close_tick
+        tests: [not_null]
+      - name: tvl_token0_equiv
+        tests: [not_null]
+      - name: active_tvl_token0
+        tests: [not_null]
+      - name: active_range_count
+        tests: [not_null]
+      - name: fees_token0_equiv
+        tests: [not_null]
+      - name: volume_token0_equiv
+        tests: [not_null]
+      - name: swap_count
+        tests: [not_null]
+
+  - name: int_pool_open_positions_current
+    description: >
+      Pool-level open LP owner-ranges, reconstructed from pool Mint/Burn events.
+      Canonical pool liquidity state. NOT a frontend mart — consumed by
+      mart_tvl_current. Pool TVL must be reconstructed from pool events
+      (this model), not from NFPM positions, because NFPM is non-exhaustive
+      (custom managers / direct pool mints).
+    columns:
+      - name: pool
+        tests: [not_null]
+      - name: owner
+        tests: [not_null]
+      - name: tick_lower
+        tests: [not_null]
+      - name: tick_upper
+        tests: [not_null]
+      - name: net_liquidity
+        tests: [not_null]
+      - name: position_amount0
+        tests: [not_null]
+      - name: position_amount1
+        tests: [not_null]
+      - name: position_token0
+        tests: [not_null]
+
+  - name: int_lp_events
+    description: >
+      Union of mint and burn events with signed liquidity and amount deltas.
+      Base table for all TVL and position computations.
+      Burns are negated so a cumsum over any date range gives the exact pool state.
+    columns:
+      - name: pool
+        tests: [not_null]
+      - name: block_number
+        tests: [not_null]
+      - name: block_time
+        tests: [not_null]
+      - name: tx_hash
+        tests: [not_null]
+      - name: event_type
+        tests: [not_null]
+      - name: amount0
+        tests: [not_null]
+      - name: amount1
+        tests: [not_null]
+
+  - name: int_tick_boundary_deltas
+    description: >
+      Distribution-oriented LP helper with one lower-boundary row and one upper-boundary row
+      per LP event. Summing liquidity_net_delta by tick boundary and cumsumming over ticks
+      reconstructs active liquidity by bin.
+    columns:
+      - name: pool
+        tests: [not_null]
+      - name: block_number
+        tests: [not_null]
+      - name: block_time
+        tests: [not_null]
+      - name: tx_hash
+        tests: [not_null]
+      - name: log_index
+        tests: [not_null]
+      - name: tick_boundary
+        tests: [not_null]
+      - name: liquidity_net_delta
+        tests: [not_null]
+      - name: boundary_side
+        tests: [not_null]
+
+  - name: int_daily_close
+    description: >
+      Last tick and price (price_token1_in_token0) per pool per day, derived from swap events.
+      One row per (pool, date) — sparse, only days with at least one swap.
+    columns:
+      - name: pool
+        tests: [not_null]
+      - name: date
+        tests: [not_null]
+      - name: close_tick
+        tests: [not_null]
+      - name: close_price
+        tests: [not_null]
+      - name: close_sqrt_price
+        tests: [not_null]
+
+  - name: int_daily_close_dense
+    description: >
+      Dense daily close helper per pool with carry-forwarded close state on quiet days.
+      Fills gaps between first and last observed swap date so downstream rolling windows
+      operate on contiguous daily rows. has_swap = 1 on real price observation days.
+    columns:
+      - name: pool
+        tests: [not_null]
+      - name: date
+        tests: [not_null]
+      - name: close_tick
+        tests: [not_null]
+      - name: close_price
+        tests: [not_null]
+      - name: close_sqrt_price
+        tests: [not_null]
+      - name: has_swap
+        tests: [not_null]
+
+  - name: int_active_liquidity_daily
+    description: >
+      In-range liquidity per pool per day.
+      Active = positions where close_tick is in [tick_lower, tick_upper).
+      Used as the fee-earned denominator: share_of_liquidity = position_liquidity / active_liquidity.
+    columns:
+      - name: pool
+        tests: [not_null]
+      - name: date
+        tests: [not_null]
+      - name: active_liquidity
+        tests: [not_null]
+
+  - name: int_range_liquidity_daily
+    description: >
+      Dense daily net liquidity per pool and tick range, after applying all LP deltas up to each date.
+      Materialized to avoid repeating the expensive LP-event cumulative sum in downstream models.
+      net_liquidity > 0 filter excludes closed (fully burned) positions.
+    columns:
+      - name: pool
+        tests: [not_null]
+      - name: date
+        tests: [not_null]
+      - name: tick_lower
+        tests: [not_null]
+      - name: tick_upper
+        tests: [not_null]
+      - name: net_liquidity
+        tests: [not_null]
+        # TODO: add custom test asserting net_liquidity cumsum never goes negative
+        # before the greatest(..., 0) clamp. Once green in prod, remove the clamp
+        # and the int24 sign overflow guard in stg_mints/stg_burns.
+
+  - name: int_active_tvl_daily
+    description: >
+      Exact V3 mark-to-market TVL held by in-range positions per pool per day,
+      denominated in token0. Equals USD only when token0 is a known stablecoin (e.g. USDC).
+      Out-of-range positions contribute 0 and are excluded from the APR denominator.
+    columns:
+      - name: pool
+        tests: [not_null]
+      - name: date
+        tests: [not_null]
+      - name: active_tvl_token0
+        tests: [not_null]
+      - name: active_range_count
+        tests: [not_null]
+
+  - name: int_hourly_snapshot_blocks
+    description: >
+      Dense hourly pool-state spine. Preserves LP-only hours and carries forward the
+      latest swap-derived state so downstream hourly distribution models can revalue
+      the pool when composition changes without a new swap.
+    columns:
+      - name: pool
+        tests: [not_null]
+      - name: hour
+        tests: [not_null]
+      - name: has_swap_hour
+        tests: [not_null]
+
+  - name: int_hourly_tick_liquidity_net
+    description: >
+      Hourly liquidityNet state at each LP tick boundary. Time-cumulative boundary
+      deltas that can be turned into full hourly bin liquidity with a cumsum over tick.
+    columns:
+      - name: pool
+        tests: [not_null]
+      - name: hour
+        tests: [not_null]
+      - name: tick
+        tests: [not_null]
+      - name: liquidity_net
+        tests: [not_null]
+
+  - name: int_daily_snapshot_blocks
+    description: >
+      Dense daily pool-state spine. Preserves LP-only days and carries forward the
+      latest swap-derived state so downstream daily distribution models can revalue
+      the pool when composition changes without a new swap.
+    columns:
+      - name: pool
+        tests: [not_null]
+      - name: date
+        tests: [not_null]
+      - name: has_swap_day
+        tests: [not_null]
+
+  - name: int_tick_volume_daily
+    description: >
+      Daily volume attributed to the active tick before each swap.
+      This is a broader derived flow view built from exact hourly tick volume.
+    columns:
+      - name: pool
+        tests: [not_null]
+      - name: date
+        tests: [not_null]
+      - name: tick
+        tests: [not_null]
+      - name: swap_count
+        tests: [not_null]
+      - name: volume_token0
+        tests: [not_null]
+      - name: volume_token1
+        tests: [not_null]
+      - name: volume_token0_equiv
+        tests: [not_null]
+
+  - name: int_tick_volume_hourly
+    description: >
+      Hourly volume attributed to the active tick before each swap.
+      This is the exact hourly flow view used to reconstruct finer temporal
+      studies without losing token0/token1 composition.
+    columns:
+      - name: pool
+        tests: [not_null]
+      - name: hour
+        tests: [not_null]
+      - name: tick
+        tests: [not_null]
+      - name: swap_count
+        tests: [not_null]
+      - name: volume_token0
+        tests: [not_null]
+      - name: volume_token1
+        tests: [not_null]
+      - name: volume_token0_equiv
+        tests: [not_null]
+
+  - name: int_tick_volume_weekly
+    description: >
+      Weekly volume attributed to the active tick before each swap.
+      This is derived from exact hourly tick volume using Monday-start calendar weeks.
+    columns:
+      - name: pool
+        tests: [not_null]
+      - name: week_start
+        tests: [not_null]
+      - name: tick
+        tests: [not_null]
+      - name: swap_count
+        tests: [not_null]
+      - name: volume_token0
+        tests: [not_null]
+      - name: volume_token1
+        tests: [not_null]
+      - name: volume_token0_equiv
+        tests: [not_null]
+
+  - name: int_daily_tick_liquidity_net
+    description: >
+      Daily liquidityNet state at each LP tick boundary. Time-cumulative boundary
+      deltas that can be turned into full daily bin liquidity with a cumsum over tick.
+    columns:
+      - name: pool
+        tests: [not_null]
+      - name: date
+        tests: [not_null]
+      - name: tick
+  - name: int_nfpm_token_mint_actions
+    description: >
+      Canonical NFPM mint actions: mint-like ERC721 transfers joined to the first
+      IncreaseLiquidity event of the same tokenId in the same transaction, then
+      matched to the exact pool Mint signature on the tracked pool.
+    columns:
+      - name: token_id
+        tests: [not_null]
+      - name: tx_hash
+        tests: [not_null]
+      - name: mint_block_number
+        tests: [not_null]
+      - name: transfer_log_index
+        tests: [not_null]
+      - name: increase_log_index
+        tests: [not_null]
+      - name: initial_owner
+        tests: [not_null]
+      - name: liquidity_delta_raw
+        tests: [not_null]
+      - name: pool
+        tests: [not_null]
+      - name: tick_lower
+        tests: [not_null]
+      - name: tick_upper
+        tests: [not_null]
+
+  - name: int_nfpm_pool_mints
+    description: >
+      Canonical pool-side Mint signatures attributable to NFPM on the tracked pool.
+      This is the shared truth used to map pool mint events to NFPM tokenIds.
+    columns:
+      - name: tx_hash
+        tests: [not_null]
+      - name: block_number
+        tests: [not_null]
+      - name: pool_mint_log_index
+        tests: [not_null]
+      - name: pool
+        tests: [not_null]
+      - name: liquidity_delta_raw
+        tests: [not_null]
+      - name: amount0_raw
+        tests: [not_null]
+      - name: amount1_raw
+        tests: [not_null]
+      - name: tick_lower
+        tests: [not_null]
+      - name: tick_upper
+        tests: [not_null]
+      - name: tx_match_ordinal
+        tests: [not_null]
+
+  - name: int_nfpm_positions
+    description: >
+      Immutable NFPM position definition per tokenId for the tracked pool, mapped
+      from NFPM mint actions to pool Mint events using tx_hash plus exact raw
+      amounts/liquidity and a transaction-local ordinal.
+    columns:
+      - name: token_id
+        tests: [not_null]
+      - name: pool
+        tests: [not_null]
+      - name: tick_lower
+        tests: [not_null]
+      - name: tick_upper
+        tests: [not_null]
+      - name: initial_owner
+        tests: [not_null]
+      - name: tx_hash
+        tests: [not_null]
+      - name: mint_block_number
+        tests: [not_null]
+      - name: liquidity_delta_raw
+        tests: [not_null]
+
+  - name: int_nfpm_position_liquidity_events
+    description: >
+      Signed liquidity lifecycle per mapped NFPM tokenId. Increases stay positive,
+      decreases are negated.
+    columns:
+      - name: token_id
+        tests: [not_null]
+      - name: pool
+        tests: [not_null]
+      - name: tx_hash
+        tests: [not_null]
+      - name: block_number
+        tests: [not_null]
+      - name: log_index
+        tests: [not_null]
+      - name: event_type
+        tests: [not_null]
+      - name: liquidity_delta_raw
+        tests: [not_null]
+
+  - name: int_nfpm_position_collect_events
+    description: >
+      Collect lifecycle per mapped NFPM tokenId, scaled to human-readable token units.
+    columns:
+      - name: token_id
+        tests: [not_null]
+      - name: pool
+        tests: [not_null]
+      - name: tx_hash
+        tests: [not_null]
+      - name: block_number
+        tests: [not_null]
+      - name: log_index
+        tests: [not_null]
+      - name: recipient
+        tests: [not_null]
+      - name: amount0_raw
+        tests: [not_null]
+      - name: amount1_raw
+        tests: [not_null]
+
+  - name: int_nfpm_position_liquidity_summary
+    description: >
+      Current signed liquidity state and historical deposit/withdraw summaries per
+      mapped NFPM tokenId.
+    columns:
+      - name: token_id
+        tests: [not_null]
+      - name: liquidity_event_count
+        tests: [not_null]
+      - name: current_liquidity_raw
+        tests: [not_null]
+      - name: total_increase_liquidity_raw
+        tests: [not_null]
+      - name: total_decrease_liquidity_raw
+        tests: [not_null]
+
+  - name: int_nfpm_position_transfer_rollup
+    description: >
+      Consolidated transfer rollup per mapped NFPM tokenId. Surfaces current owner,
+      transfer lifecycle timing, and burn/secondary-transfer stats in one row.
+    columns:
+      - name: token_id
+        tests: [not_null]
+      - name: current_owner
+        tests: [not_null]
+      - name: ownership_block_number
+        tests: [not_null]
+      - name: ownership_block_time
+        tests: [not_null]
+      - name: transfer_count
+        tests: [not_null]
+      - name: burn_transfer_count
+        tests: [not_null]
+      - name: last_transfer_block_number
+        tests: [not_null]
+      - name: last_transfer_block_time
+        tests: [not_null]
+
+  - name: int_nfpm_position_collect_decomposition
+    description: >
+      Event-level decomposition of Collect transfers into principal returned from
+      prior decreases and residual fees, using a deterministic principal-first
+      accounting convention within each token leg.
+    columns:
+      - name: token_id
+        tests: [not_null]
+      - name: tx_hash
+        tests: [not_null]
+      - name: block_number
+        tests: [not_null]
+      - name: log_index
+        tests: [not_null]
+      - name: principal_collected_amount0
+        tests: [not_null]
+      - name: principal_collected_amount1
+        tests: [not_null]
+      - name: fees_collected_amount0
+        tests: [not_null]
+      - name: fees_collected_amount1
+        tests: [not_null]
+
+  - name: int_nfpm_position_collect_rollup
+    description: >
+      Consolidated collect rollup per mapped NFPM tokenId. Keeps raw/human collect
+      totals together with the principal-first decomposition so downstream marts
+      depend on one collect summary only.
+    columns:
+      - name: token_id
+        tests: [not_null]
+      - name: collect_count
+        tests: [not_null]
+      - name: total_collected_amount0
+        tests: [not_null]
+      - name: total_collected_amount1
+        tests: [not_null]
+      - name: total_principal_collected_amount0
+        tests: [not_null]
+      - name: total_principal_collected_amount1
+        tests: [not_null]
+      - name: total_fees_collected_amount0
+        tests: [not_null]
+      - name: total_fees_collected_amount1
+        tests: [not_null]
+
+  - name: int_nfpm_position_entry_state
+    description: >
+      Latest observed swap-derived pool state at or before each NFPM position's
+      pool Mint event. This is the entry price/tick anchor for current PnL views.
+      Positions minted before the first observed swap are kept with entry_state_missing = 1.
+    columns:
+      - name: token_id
+        tests: [not_null]
+      - name: pool
+        tests: [not_null]
+      - name: mint_block_number
+        tests: [not_null]
+      - name: pool_mint_log_index
+        tests: [not_null]
+      - name: entry_state_missing
+        tests: [not_null]
+
+  - name: int_nfpm_position_increase_lots
+    description: >
+      Canonical capital-lot facts per mapped NFPM tokenId. Every IncreaseLiquidity
+      event is treated as a new lot with its own entry-time benchmark anchor.
+    columns:
+      - name: token_id
+        tests: [not_null]
+      - name: pool
+        tests: [not_null]
+      - name: lot_seq
+        tests: [not_null]
+      - name: is_mint_lot
+        tests: [not_null]
+      - name: lot_block_number
+        tests: [not_null]
+      - name: lot_log_index
+        tests: [not_null]
+      - name: lot_liquidity_added_raw
+        tests: [not_null]
+      - name: lot_amount0
+        tests: [not_null]
+      - name: lot_amount1
+        tests: [not_null]
+      - name: entry_state_missing
+        tests: [not_null]
+
+  - name: int_nfpm_position_lot_benchmark_summary
+    description: >
+      Aggregate lot-based benchmark state per mapped NFPM tokenId. Downstream PnL
+      percentages should be derived from these aggregate value totals, never from
+      arithmetic averages of lot-level percentages.
+    columns:
+      - name: token_id
+        tests: [not_null]
+      - name: pool
+        tests: [not_null]
+      - name: lot_count
+        tests: [not_null]
+      - name: valid_lot_benchmark_count
+        tests: [not_null]
+      - name: missing_lot_benchmark_count
+        tests: [not_null]
+      - name: is_lot_benchmark_valid
+        tests: [not_null]
+      - name: total_contribution_amount0
+        tests: [not_null]
+      - name: total_contribution_amount1
+        tests: [not_null]
+      - name: total_hodl_value_token0_current
+        tests: [not_null]
+
+  - name: int_nfpm_position_liquidity_spans
+    description: >
+      Positive-liquidity spans per mapped NFPM tokenId. Each row represents an
+      interval where deployed liquidity stays constant between two liquidity events.
+      This is the canonical helper for exact fee-accrual and time-in-range work.
+    columns:
+      - name: token_id
+        tests: [not_null]
+      - name: pool
+        tests: [not_null]
+      - name: start_block_number
+        tests: [not_null]
+      - name: start_log_index
+        tests: [not_null]
+      - name: start_event_seq
+        tests: [not_null]
+      - name: position_liquidity_raw
+        tests: [not_null]
+
+  - name: int_nfpm_position_fee_daily
+    description: >
+      Chunkable daily generated-fee facts per mapped NFPM tokenId. This is the
+      backfillable swap-attribution layer; token-level summaries aggregate from it.
+    columns:
+      - name: token_id
+        tests: [not_null]
+      - name: pool
+        tests: [not_null]
+      - name: date
+        tests: [not_null]
+      - name: active_swap_count
+        tests: [not_null]
+      - name: total_fees_accrued_amount0
+        tests: [not_null]
+      - name: total_fees_accrued_amount1
+        tests: [not_null]
+      - name: total_fees_accrued_token0_equiv_generated
+        tests: [not_null]
+
+  - name: int_nfpm_position_fee_summary
+    description: >
+      Canonical generated-fee summary per mapped NFPM tokenId, computed swap by swap
+      from liquidity-weight share versus active pool liquidity. Aggregates the
+      chunkable daily layer into the stable 1-row-per-token contract.
+    columns:
+      - name: token_id
+        tests: [not_null]
+      - name: pool
+        tests: [not_null]
+      - name: active_swap_count
+        tests: [not_null]
+      - name: total_fees_accrued_amount0
+        tests: [not_null]
+      - name: total_fees_accrued_amount1
+        tests: [not_null]
+      - name: total_fees_accrued_token0_equiv_generated
+        tests: [not_null]
+
+  - name: int_nfpm_position_time_in_range_daily
+    description: >
+      Chunkable daily observed time-in-range facts per mapped NFPM tokenId on the
+      swap-state timeline. Intervals are split across day boundaries exactly.
+    columns:
+      - name: token_id
+        tests: [not_null]
+      - name: pool
+        tests: [not_null]
+      - name: date
+        tests: [not_null]
+      - name: observed_time_in_range_seconds
+        tests: [not_null]
+      - name: observed_window_seconds
+        tests: [not_null]
+      - name: observed_out_of_range_seconds
+        tests: [not_null]
+
+  - name: int_nfpm_position_time_in_range_summary
+    description: >
+      Observed time-in-range summary per mapped NFPM tokenId on the swap-state timeline.
+      Aggregates the chunkable daily layer, so quiet periods after the last observed
+      swap are still not extrapolated.
+    columns:
+      - name: token_id
+        tests: [not_null]
+      - name: pool
+        tests: [not_null]
+      - name: observed_time_in_range_seconds
+        tests: [not_null]
+      - name: observed_window_seconds
+        tests: [not_null]
+      - name: observed_out_of_range_seconds
+        tests: [not_null]
+
+  - name: int_weekly_tick_liquidity_net
+    description: >
+      Weekly liquidityNet state at each LP tick boundary.
+      Keeps the last observed daily boundary snapshot of the week instead of
+      summing or averaging stock values.
+    columns:
+      - name: pool
+        tests: [not_null]
+      - name: week_start
+        tests: [not_null]
+      - name: tick
+        tests: [not_null]
+      - name: liquidity_net
+        tests: [not_null]
+
+  - name: int_swaps_enriched
+    description: >
+      Swap-level helper with lagged pre-swap state, next-swap interval, and generated fee fields.
+      This is the core path table for scenario backtests.
+    columns:
+      - name: pool
+        tests: [not_null]
+      - name: block_number
+        tests: [not_null]
+      - name: log_index
+        tests: [not_null]
+      - name: block_time
+        tests: [not_null]
+      - name: tick_after
+        tests: [not_null]
+      - name: price_after
+        tests: [not_null]
+
+  - name: int_swaps_tick_volume
+    description: >
+      Swap-level volume attributed to the active tick immediately before execution.
+      This is the canonical bridge between swap flow and tick-level liquidity studies.
+      The first observed swap per pool falls back to tick_after and is flagged.
+    columns:
+      - name: pool
+        tests: [not_null]
+      - name: block_number
+        tests: [not_null]
+      - name: log_index
+        tests: [not_null]
+      - name: block_time
+        tests: [not_null]
+      - name: active_tick
+        tests: [not_null]
+      - name: fallback_after_swap
+        tests: [not_null]
+      - name: active_price_token1_in_token0
+        tests: [not_null]
+      - name: volume_token0
+        tests: [not_null]
+      - name: volume_token1
+        tests: [not_null]
+      - name: volume_token0_equiv
+        tests: [not_null]
+
+  - name: int_position_backtest_inputs
+    description: >
+      Canonical scenario inputs for simulated LP backtests, supplied via dbt vars.
+      capital_committed_token0 is the user input; liquidity is derived downstream.
+    columns:
+      - name: scenario_id
+        tests: [not_null]
+      - name: pool
+        tests: [not_null]
+      - name: start_block
+        tests: [not_null]
+      - name: end_block
+        tests: [not_null]
+      - name: tick_lower
+        tests: [not_null]
+      - name: tick_upper
+        tests: [not_null]
+      - name: capital_committed_token0
+        tests: [not_null]
+
+  - name: int_position_backtest_entry_state
+    description: >
+      End-of-block entry state for each scenario, anchored to the last observed swap
+      with block_number <= start_block.
+    columns:
+      - name: scenario_id
+        tests: [not_null]
+      - name: pool
+        tests: [not_null]
+      - name: start_block
+        tests: [not_null]
+      - name: end_block
+        tests: [not_null]
+
+  - name: int_position_backtest_entry_liquidity
+    description: >
+      Derived initial composition and liquidity for each scenario.
+      Uses the entry state plus V3 math to scale unit liquidity to the committed capital.
+    columns:
+      - name: scenario_id
+        tests: [not_null]
+      - name: pool
+        tests: [not_null]
+      - name: initial_liquidity
+      - name: initial_amount0
+      - name: initial_amount1
+
+  - name: int_position_backtest_swap_path
+    description: >
+      Swap-level accrued-fee path for each scenario.
+      Fees accrue only when the simulated position is active before the swap.
+    columns:
+      - name: scenario_id
+        tests: [not_null]
+      - name: pool
+        tests: [not_null]
+      - name: block_number
+        tests: [not_null]
+      - name: log_index
+        tests: [not_null]
+
+  - name: int_position_backtest_exit_state
+    description: >
+      End-of-block exit state and principal mark-to-market for each scenario.
+    columns:
+      - name: scenario_id
+        tests: [not_null]
+      - name: pool
+        tests: [not_null]
+      - name: end_block
+        tests: [not_null]
+
+  - name: int_position_backtest_time_in_range
+    description: >
+      Observed time-in-range metrics on the swap-state timeline.
+      These are exposed as observed_* because exact quiet-block timing is not yet modeled.
+    columns:
+      - name: scenario_id
+        tests: [not_null]
+      - name: pool
+        tests: [not_null]
+      - name: observed_time_in_range_seconds
+        tests: [not_null]
+      - name: observed_window_seconds
+        tests: [not_null]

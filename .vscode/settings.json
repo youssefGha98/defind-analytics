@@ -1,0 +1,12 @@
+{
+  // Notebook hygiene — minimal settings only. Anything more invasive causes
+  // VSCode to refuse spawning a kernel when you switch notebooks.
+
+  // Prompts before silently auto-restarting a kernel after a crash.
+  "jupyter.askForKernelRestart": true,
+
+  // Truncate huge text outputs (large DataFrame prints) so the IPC kernel↔frontend
+  // doesn't choke on a single cell. Plotly traces are not affected.
+  "notebook.output.scrolling": true,
+  "notebook.output.textLineLimit": 30
+}

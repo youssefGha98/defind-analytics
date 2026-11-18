@@ -1,0 +1,28 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <r2>
+                <type>s3</type>
+                <endpoint>https://YOUR_R2_ACCOUNT_ID.r2.cloudflarestorage.com/defind-clickhouse/</endpoint>
+                <access_key_id>YOUR_R2_ACCESS_KEY_ID</access_key_id>
+                <secret_access_key>YOUR_R2_SECRET_ACCESS_KEY</secret_access_key>
+                <region>auto</region>
+            </r2>
+            <r2_cache>
+                <type>cache</type>
+                <disk>r2</disk>
+                <path>/var/lib/clickhouse/cache/r2/</path>
+                <max_size>10737418240</max_size>
+            </r2_cache>
+        </disks>
+        <policies>
+            <r2_policy>
+                <volumes>
+                    <main>
+                        <disk>r2_cache</disk>
+                    </main>
+                </volumes>
+            </r2_policy>
+        </policies>
+    </storage_configuration>
+</clickhouse>

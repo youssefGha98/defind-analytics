@@ -1,0 +1,67 @@
+-- External tables pointing to R2, data stays on R2
+-- Path structure: defind/uniswap/usdc_weth/{Event}/*.parquet
+
+CREATE TABLE IF NOT EXISTS uniswap_usdc_weth_mint
+(
+    block_number    Nullable(UInt64),
+    block_timestamp Nullable(UInt64),
+    tx_hash         Nullable(String),
+    log_index       Nullable(UInt64),
+    contract        Nullable(String),
+    event           Nullable(String),
+    amount          Nullable(String),
+    amount0         Nullable(String),
+    amount1         Nullable(String),
+    owner           Nullable(String),
+    sender          Nullable(String),
+    tickLower       Nullable(String),
+    tickUpper       Nullable(String)
+) ENGINE = S3(
+    'https://YOUR_R2_ACCOUNT_ID.r2.cloudflarestorage.com/defind/uniswap/usdc_weth/Mint/*.parquet',
+    'YOUR_R2_ACCESS_KEY_ID',
+    'YOUR_R2_SECRET_ACCESS_KEY',
+    'Parquet'
+);
+
+CREATE TABLE IF NOT EXISTS uniswap_usdc_weth_burn
+(
+    block_number    Nullable(UInt64),
+    block_timestamp Nullable(UInt64),
+    tx_hash         Nullable(String),
+    log_index       Nullable(UInt64),
+    contract        Nullable(String),
+    event           Nullable(String),
+    amount          Nullable(String),
+    amount0         Nullable(String),
+    amount1         Nullable(String),
+    owner           Nullable(String),
+    tickLower       Nullable(String),
+    tickUpper       Nullable(String)
+) ENGINE = S3(
+    'https://YOUR_R2_ACCOUNT_ID.r2.cloudflarestorage.com/defind/uniswap/usdc_weth/Burn/*.parquet',
+    'YOUR_R2_ACCESS_KEY_ID',
+    'YOUR_R2_SECRET_ACCESS_KEY',
+    'Parquet'
+);
+
+CREATE TABLE IF NOT EXISTS uniswap_usdc_weth_swap
+(
+    block_number    Nullable(UInt64),
+    block_timestamp Nullable(UInt64),
+    tx_hash         Nullable(String),
+    log_index       Nullable(UInt64),
+    contract        Nullable(String),
+    event           Nullable(String),
+    amount0         Nullable(String),
+    amount1         Nullable(String),
+    liquidity       Nullable(String),
+    recipient       Nullable(String),
+    sender          Nullable(String),
+    sqrtPriceX96    Nullable(String),
+    tick            Nullable(String)
+) ENGINE = S3(
+    'https://YOUR_R2_ACCOUNT_ID.r2.cloudflarestorage.com/defind/uniswap/usdc_weth/Swap/*.parquet',
+    'YOUR_R2_ACCESS_KEY_ID',
+    'YOUR_R2_SECRET_ACCESS_KEY',
+    'Parquet'
+);

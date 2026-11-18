@@ -1,0 +1,64 @@
+version: 2
+
+models:
+  - name: dim_indexed_pools
+    description: >
+      Canonical indexed pool universe. Every product mart (pool screener,
+      analytics, distribution, position cards, wallet aggregates, range
+      candidates, range heatmap) must scope to this dimension. V1 = every pool
+      present in stg_pools is considered an active indexed pool on Ethereum
+      mainnet Uniswap v3.
+    columns:
+      - name: pool_address
+        description: Lowercased pool contract address. Primary key.
+        tests:
+          - not_null
+          - unique
+      - name: chain
+        description: Chain key (V1 hardcoded to 'ethereum').
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['ethereum']
+      - name: dex
+        description: DEX key (V1 hardcoded to 'uniswap_v3').
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['uniswap_v3']
+      - name: token0_address
+        tests: [not_null]
+      - name: token1_address
+        tests: [not_null]
+      - name: token0_symbol
+        tests: [not_null]
+      - name: token1_symbol
+        tests: [not_null]
+      - name: token0_decimals
+        tests: [not_null]
+      - name: token1_decimals
+        tests: [not_null]
+      - name: fee_tier
+        description: Fee tier as a percentage (0.05 = 0.05%). Matches stg_pools.fee_bps.
+        tests: [not_null]
+      - name: tick_spacing
+        tests: [not_null]
+      - name: is_active
+        description: 1 if the pool is currently part of the active product universe.
+        tests:
+          - not_null
+          - accepted_values:
+              values: [0, 1]
+      - name: indexed_since_block
+        tests: [not_null]
+      - name: indexed_until_block
+        description: NULL while coverage_status = 'active'.
+      - name: coverage_status
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['active', 'partial', 'paused', 'deprecated']
+      - name: created_at
+        tests: [not_null]
+      - name: updated_at
+        tests: [not_null]

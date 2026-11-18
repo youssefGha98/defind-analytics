@@ -1,0 +1,72 @@
+version: 2
+
+models:
+  - name: int_adverse_selection_proxy_daily
+    description: >
+      Heuristic V1 LVR (loss-versus-rebalancing) proxy per pool/day. Plugs the
+      annualized realized volatility from mart_price_analytics_daily into the
+      continuous-time LVR formula `sigma^2 / 8` to expose an APR-form adverse
+      selection cost and a daily token0 drag. Always estimated (is_estimated=1) —
+      this is NOT a measured LVR from microstructure.
+    columns:
+      - name: pool
+        tests: [not_null]
+      - name: date
+        tests: [not_null]
+      - name: active_tvl_token0
+        tests: [not_null]
+      - name: active_range_count
+        tests: [not_null]
+      - name: adverse_selection_cost_apr_proxy
+        description: Default product surface — LVR APR using realized_vol_7d.
+      - name: adverse_selection_cost_apr_proxy_7d
+      - name: adverse_selection_cost_apr_proxy_30d
+      - name: lvr_proxy_daily_token0
+      - name: lvr_proxy_daily_token0_7d
+      - name: lvr_proxy_daily_token0_30d
+      - name: is_estimated
+        tests:
+          - not_null
+          - accepted_values:
+              values: [1]
+
+  - name: int_range_candidates_grid
+    description: >
+      Per-pool/day range candidate grid for the Range Optimizer. Generates 6
+      candidates per (pool, date) — centered widths {±1,2,5,10%} plus
+      shifted {up,down} 2% — snapped to the pool's tick_spacing (lower floored,
+      upper ceiled). Range scoring/ranking happens in Python; this model only
+      ships the candidate geometry.
+    columns:
+      - name: pool
+        tests: [not_null]
+      - name: date
+        tests: [not_null]
+      - name: candidate_id
+        tests:
+          - not_null
+          - accepted_values:
+              values:
+                - centered_1pct
+                - centered_2pct
+                - centered_5pct
+                - centered_10pct
+                - shifted_up_2pct
+                - shifted_down_2pct
+      - name: range_type
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['centered', 'shifted_up', 'shifted_down']
+      - name: tick_lower
+        tests: [not_null]
+      - name: tick_upper
+        tests: [not_null]
+      - name: close_tick
+        tests: [not_null]
+      - name: tick_spacing
+        tests: [not_null]
+      - name: half_width_ticks
+        tests: [not_null]
+      - name: shift_ticks
+        tests: [not_null]

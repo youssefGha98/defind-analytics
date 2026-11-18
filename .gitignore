@@ -1,0 +1,24 @@
+# ─── Secrets ────────────────────────────────────────────────────────────────
+.env
+# Files with R2 credentials inline — committed as *.example templates instead.
+clickhouse/config/remote/r2-storage.xml
+clickhouse/config/legacy/r2-storage.xml
+clickhouse/ddl/uniswap_usdc_weth.sql
+
+# ─── Python ─────────────────────────────────────────────────────────────────
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ipynb_checkpoints/
+
+# ─── dbt artifacts ──────────────────────────────────────────────────────────
+dbt/defind_analytics/target/
+dbt/defind_analytics/dbt_packages/
+dbt/defind_analytics/logs/
+logs/
+
+# ─── Local tooling ──────────────────────────────────────────────────────────
+# Personal Claude Code permission allow-lists (would auto-approve commands for anyone cloning).
+.claude/
+.codex

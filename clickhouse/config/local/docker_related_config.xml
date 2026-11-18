@@ -1,0 +1,12 @@
+<clickhouse>
+     <!-- Listen wildcard address to allow accepting connections from other containers and host network. -->
+    <listen_host>::</listen_host>
+    <listen_host>0.0.0.0</listen_host>
+    <listen_try>1</listen_try>
+
+    <!-- Server-wide memory cap = 0.8 x container limit (9 GiB) ~= 7.2 GiB.
+         Per-query caps and GROUP BY / ORDER BY spill-to-disk are NOT set here:
+         ClickHouse 26.x does not honor <profiles> from config.d. Those live in
+         the dbt profile (profiles.yml -> custom_settings) instead. -->
+    <max_server_memory_usage_to_ram_ratio>0.8</max_server_memory_usage_to_ram_ratio>
+</clickhouse>

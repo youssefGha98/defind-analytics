@@ -1,0 +1,367 @@
+version: 2
+
+models:
+  # ─── Pool layer ─────────────────────────────────────────────────────────────
+  - name: mart_pool_screener_daily
+    description: >
+      Pool screener feature mart — 1 row per (pool, date), scoped to
+      dim_indexed_pools. Powers the Pool Screener and feeds Python pool scoring.
+      Factual evidence only: TVL, volume, fees, APR, realized vol, adverse
+      selection proxy, basic flow, price returns, drawdown, concentration.
+      No score, no decision label, no recommendation text.
+    columns:
+      - name: pool_address
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_indexed_pools')
+              field: pool_address
+      - name: date
+        tests: [not_null]
+      - name: chain
+        tests: [not_null]
+      - name: dex
+        tests: [not_null]
+      - name: token_pair
+        tests: [not_null]
+      - name: tvl_token0_equiv
+        tests: [not_null]
+      - name: active_tvl_token0
+        tests: [not_null]
+      - name: out_of_range_tvl_token0
+        tests: [not_null]
+      - name: volume_24h_token0_equiv
+        tests: [not_null]
+      - name: volume_7d_token0_equiv
+        tests: [not_null]
+      - name: volume_30d_token0_equiv
+        tests: [not_null]
+      - name: fees_24h_token0_equiv
+        tests: [not_null]
+      - name: fees_7d_token0_equiv
+        tests: [not_null]
+      - name: fees_30d_token0_equiv
+        tests: [not_null]
+      - name: position_count
+        tests: [not_null]
+      - name: is_estimated
+        tests:
+          - not_null
+          - accepted_values:
+              values: [0, 1]
+      - name: updated_at
+        tests: [not_null]
+
+  - name: mart_pool_analytics_snapshot
+    description: >
+      Pool analytics snapshot — 1 row per indexed pool, latest state. Builds on
+      the latest mart_pool_screener_daily row and overrides current_tick /
+      current_price with int_current_state.
+    columns:
+      - name: pool_address
+        tests:
+          - not_null
+          - unique
+          - relationships:
+              to: ref('dim_indexed_pools')
+              field: pool_address
+      - name: snapshot_time
+        tests: [not_null]
+      - name: chain
+        tests: [not_null]
+      - name: dex
+        tests: [not_null]
+      - name: token_pair
+        tests: [not_null]
+      - name: tvl_token0_equiv
+        tests: [not_null]
+      - name: active_tvl_token0
+        tests: [not_null]
+      - name: lp_count
+        tests: [not_null]
+      - name: position_count
+        tests: [not_null]
+      - name: updated_at
+        tests: [not_null]
+
+  - name: mart_pool_distribution_snapshot
+    description: >
+      Pool TVL/liquidity distribution snapshot per tick bin. Wraps
+      mart_tvl_distribution with trailing 7d volume / fees / fees_per_unit_liquidity
+      per bin and indexed-pool scope. Pool-paid volatility per bin is V1-deferred.
+    columns:
+      - name: pool_address
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_indexed_pools')
+              field: pool_address
+      - name: tick_lower
+        tests: [not_null]
+      - name: tick_upper
+        tests: [not_null]
+      - name: tick_mid
+        tests: [not_null]
+      - name: liquidity
+        tests: [not_null]
+      - name: tvl_token0
+        tests: [not_null]
+      - name: pct_liquidity
+        tests: [not_null]
+      - name: is_current_tick
+        tests: [not_null]
+      - name: updated_at
+        tests: [not_null]
+
+  # ─── Position layer ─────────────────────────────────────────────────────────
+  - name: mart_position_cards_current
+    description: >
+      Position card mart — 1 row per OPEN NFPM token_id on indexed pools.
+      Factual fields only (MTM, range status, fees, IL, age, observed time-in-range).
+      No score, no recommendation, no risk label.
+    columns:
+      - name: token_id
+        tests:
+          - not_null
+          - unique
+      - name: wallet
+        tests: [not_null]
+      - name: pool_address
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_indexed_pools')
+              field: pool_address
+      - name: tick_lower
+        tests: [not_null]
+      - name: tick_upper
+        tests: [not_null]
+      - name: status_in_range
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['in_range', 'below_range', 'above_range']
+      - name: pooled_value_token0
+        tests: [not_null]
+      - name: position_age_days
+        tests: [not_null]
+      - name: updated_at
+        tests: [not_null]
+
+  - name: mart_position_features_current
+    description: >
+      Position scoring features — 1 row per OPEN NFPM token_id on indexed pools.
+      Pure feature inputs for the Python position scoring engine. Distances are
+      tick-based, normalized by range width.
+    columns:
+      - name: token_id
+        tests:
+          - not_null
+          - unique
+      - name: wallet
+        tests: [not_null]
+      - name: pool_address
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_indexed_pools')
+              field: pool_address
+      - name: position_width_pct
+        tests: [not_null]
+      - name: capital_utilization_current
+        tests: [not_null]
+      - name: updated_at
+        tests: [not_null]
+
+  # ─── Wallet layer ───────────────────────────────────────────────────────────
+  - name: mart_tracked_lp_wallet_overview_current
+    description: >
+      Tracked-LP wallet overview — 1 row per wallet that currently owns at least
+      one NFPM position on an indexed pool. V1 = LP-only on indexed pools, NOT a
+      full wallet tracker. Auto-discovery via current_owner. Coverage metadata
+      hardcoded for the API to surface to the user.
+    columns:
+      - name: wallet
+        tests:
+          - not_null
+          - unique
+      - name: tracked_lp_value_token0
+        tests: [not_null]
+      - name: tracked_open_positions_count
+        tests: [not_null]
+      - name: tracked_total_positions_count
+        tests: [not_null]
+      - name: tracked_in_range_positions_count
+        tests: [not_null]
+      - name: tracked_out_of_range_positions_count
+        tests: [not_null]
+      - name: indexed_pools_count
+        tests: [not_null]
+      - name: coverage_scope
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['indexed_pools_only']
+      - name: updated_at
+        tests: [not_null]
+
+  - name: mart_tracked_lp_wallet_exposure_current
+    description: >
+      Tracked-LP wallet exposure breakdown — 1 row per (wallet, exposure_dimension,
+      exposure_name). V1 dimensions: by_token, by_status, by_pool. Each dimension's
+      exposure_pct sums to 1 per wallet.
+    columns:
+      - name: wallet
+        tests: [not_null]
+      - name: exposure_dimension
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['by_token', 'by_status', 'by_pool']
+      - name: exposure_name
+        tests: [not_null]
+      - name: exposure_token0
+        tests: [not_null]
+      - name: coverage_scope
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['indexed_pools_only']
+      - name: updated_at
+        tests: [not_null]
+
+  - name: mart_tracked_lp_wallet_pnl_attribution_current
+    description: >
+      Tracked-LP wallet PnL attribution — 1 row per (wallet, component) for
+      components {fees, rewards, il_or_inventory_drift, adverse_selection_cost_proxy,
+      gas, net_pnl}. NULL stubs for V1-deferred components flagged via is_estimated.
+    columns:
+      - name: wallet
+        tests: [not_null]
+      - name: component
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['fees', 'rewards', 'il_or_inventory_drift',
+                       'adverse_selection_cost_proxy', 'gas', 'net_pnl']
+      - name: is_estimated
+        tests:
+          - not_null
+          - accepted_values:
+              values: [0, 1]
+      - name: coverage_scope
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['indexed_pools_only']
+      - name: updated_at
+        tests: [not_null]
+
+  - name: mart_tracked_lp_wallet_activity_recent
+    description: >
+      Tracked-LP wallet recent activity feed — 1 row per (token_id, block_number,
+      log_index, activity_type). Last 90 days. V1 attributes liquidity/collect
+      events to the tokenId's CURRENT owner (simplification — historically-correct
+      attribution is deferred).
+    columns:
+      - name: wallet
+        tests: [not_null]
+      - name: event_time
+        tests: [not_null]
+      - name: block_number
+        tests: [not_null]
+      - name: tx_hash
+        tests: [not_null]
+      - name: token_id
+        tests: [not_null]
+      - name: activity_type
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['mint', 'burn', 'transfer', 'increase_liquidity',
+                       'decrease_liquidity', 'collect']
+      - name: description
+        tests: [not_null]
+      - name: coverage_scope
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['indexed_pools_only']
+      - name: updated_at
+        tests: [not_null]
+
+  # ─── Range layer ────────────────────────────────────────────────────────────
+  - name: mart_range_candidates_features
+    description: >
+      Range candidate features mart — 1 row per (pool, date, candidate_id).
+      Pure feature inputs for the Python Range Optimizer. Each candidate combines
+      geometry from int_range_candidates_grid with trailing 7d/30d activity inside
+      the candidate's tick range and trailing in-range probability (computed inline).
+    columns:
+      - name: pool_address
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_indexed_pools')
+              field: pool_address
+      - name: date
+        tests: [not_null]
+      - name: candidate_id
+        tests:
+          - not_null
+          - accepted_values:
+              values:
+                - centered_1pct
+                - centered_2pct
+                - centered_5pct
+                - centered_10pct
+                - shifted_up_2pct
+                - shifted_down_2pct
+      - name: range_type
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['centered', 'shifted_up', 'shifted_down']
+      - name: tick_lower
+        tests: [not_null]
+      - name: tick_upper
+        tests: [not_null]
+      - name: width_ticks
+        tests: [not_null]
+      - name: width_pct
+        tests: [not_null]
+      - name: is_estimated
+        tests:
+          - not_null
+          - accepted_values:
+              values: [1]
+      - name: updated_at
+        tests: [not_null]
+
+  - name: mart_range_heatmap_features
+    description: >
+      Range heatmap features — 8x8 grid of (lower_offset × upper_offset) cells
+      per indexed pool, "as of latest" only. Powers the Range Optimizer heatmap.
+      Python computes the risk-adjusted color value.
+    columns:
+      - name: pool_address
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_indexed_pools')
+              field: pool_address
+      - name: lower_tick
+        tests: [not_null]
+      - name: upper_tick
+        tests: [not_null]
+      - name: close_tick
+        tests: [not_null]
+      - name: tick_spacing
+        tests: [not_null]
+      - name: is_estimated
+        tests:
+          - not_null
+          - accepted_values:
+              values: [1]
+      - name: updated_at
+        tests: [not_null]

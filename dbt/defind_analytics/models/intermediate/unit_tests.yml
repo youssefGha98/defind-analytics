@@ -1,0 +1,1910 @@
+unit_tests:
+
+  # ─── int_daily_close_dense ──────────────────────────────────────────────────
+
+  - name: test_daily_close_dense_fills_gap_and_flags_has_swap
+    description: >
+      One swap day on 2024-01-01 and another on 2024-01-03 must generate a dense
+      row for 2024-01-02 with carried close state and has_swap=0.
+    model: int_daily_close_dense
+
+    given:
+      - input: ref('int_daily_close')
+        rows:
+          - pool: "0xpool1"
+            date: "2024-01-01"
+            close_tick: 0
+            close_price: 1000000000000.0
+            close_sqrt_price: 1.0
+          - pool: "0xpool1"
+            date: "2024-01-03"
+            close_tick: 100
+            close_price: 250000000000.0
+            close_sqrt_price: 2.0
+
+      - input: ref('stg_pools')
+        rows:
+          - pool: "0xpool1"
+            fee_bps: 0.05
+            tick_spacing: 10
+            token0_address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+            token0_symbol: "USDC"
+            token0_decimals: 6
+            token1_address: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+            token1_symbol: "WETH"
+            token1_decimals: 18
+            deployment_block: 1
+            deployment_ts: "2021-05-05 00:00:00"
+
+    expect:
+      rows:
+        - pool: "0xpool1"
+          date: "2024-01-01"
+          close_tick: 0
+          close_price: 1000000000000.0
+          close_sqrt_price: 1.0
+          has_swap: 1
+        - pool: "0xpool1"
+          date: "2024-01-02"
+          close_tick: 0
+          close_price: 1000000000000.0
+          close_sqrt_price: 1.0
+          has_swap: 0
+        - pool: "0xpool1"
+          date: "2024-01-03"
+          close_tick: 100
+          close_price: 250000000000.0
+          close_sqrt_price: 2.0
+          has_swap: 1
+
+  - name: test_daily_close_dense_recomputes_sqrt_from_price
+    description: >
+      close_sqrt_price must be derived from close_price in the final SELECT,
+      not carried independently from int_daily_close.
+    model: int_daily_close_dense
+
+    given:
+      - input: ref('int_daily_close')
+        rows:
+          - pool: "0xpool1"
+            date: "2024-01-01"
+            close_tick: 0
+            close_price: 1000000000000.0
+            close_sqrt_price: 999.0
+
+      - input: ref('stg_pools')
+        rows:
+          - pool: "0xpool1"
+            fee_bps: 0.05
+            tick_spacing: 10
+            token0_address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+            token0_symbol: "USDC"
+            token0_decimals: 6
+            token1_address: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+            token1_symbol: "WETH"
+            token1_decimals: 18
+            deployment_block: 1
+            deployment_ts: "2021-05-05 00:00:00"
+
+    expect:
+      rows:
+        - pool: "0xpool1"
+          date: "2024-01-01"
+          close_tick: 0
+          close_price: 1000000000000.0
+          close_sqrt_price: 1.0
+          has_swap: 1
+
+  # ─── int_range_liquidity_daily ──────────────────────────────────────────────
+
+  - name: test_range_liquidity_daily_dense_carry_forward
+    description: >
+      One range is minted on day 1 and remains open through day 3.
+      The helper must emit a dense daily range state, including the quiet day 2.
+    model: int_range_liquidity_daily
+
+    given:
+      - input: ref('int_lp_events')
+        rows:
+          - pool: "0xpool1"
+            block_time: "2024-01-01 10:00:00"
+            tick_lower: 0
+            tick_upper: 10
+            liquidity_delta: 1000
+
+      - input: ref('int_daily_close')
+        rows:
+          - pool: "0xpool1"
+            date: "2024-01-01"
+          - pool: "0xpool1"
+            date: "2024-01-03"
+
+    expect:
+      rows:
+        - pool: "0xpool1"
+          date: "2024-01-01"
+          tick_lower: 0
+          tick_upper: 10
+          net_liquidity: 1000
+        - pool: "0xpool1"
+          date: "2024-01-02"
+          tick_lower: 0
+          tick_upper: 10
+          net_liquidity: 1000
+        - pool: "0xpool1"
+          date: "2024-01-03"
+          tick_lower: 0
+          tick_upper: 10
+          net_liquidity: 1000
+
+  - name: test_range_liquidity_daily_full_burn_filters_zero
+    description: >
+      A full burn on day 2 drives net liquidity to zero, so the helper must stop
+      emitting rows for that range from that day onward.
+    model: int_range_liquidity_daily
+
+    given:
+      - input: ref('int_lp_events')
+        rows:
+          - pool: "0xpool1"
+            block_time: "2024-01-01 10:00:00"
+            tick_lower: 0
+            tick_upper: 10
+            liquidity_delta: 1000
+          - pool: "0xpool1"
+            block_time: "2024-01-02 10:00:00"
+            tick_lower: 0
+            tick_upper: 10
+            liquidity_delta: -1000
+
+      - input: ref('int_daily_close')
+        rows:
+          - pool: "0xpool1"
+            date: "2024-01-01"
+          - pool: "0xpool1"
+            date: "2024-01-03"
+
+    expect:
+      rows:
+        - pool: "0xpool1"
+          date: "2024-01-01"
+          tick_lower: 0
+          tick_upper: 10
+          net_liquidity: 1000
+
+  - name: test_range_liquidity_daily_same_day_events_aggregate
+    description: >
+      Multiple LP events on the same calendar day must all affect that day's snapshot.
+      This documents the date-level semantics now centralized in the helper.
+    model: int_range_liquidity_daily
+
+    given:
+      - input: ref('int_lp_events')
+        rows:
+          - pool: "0xpool1"
+            block_time: "2024-01-01 08:00:00"
+            tick_lower: 100
+            tick_upper: 200
+            liquidity_delta: 1000
+          - pool: "0xpool1"
+            block_time: "2024-01-01 20:00:00"
+            tick_lower: 150
+            tick_upper: 300
+            liquidity_delta: 500
+          - pool: "0xpool1"
+            block_time: "2024-01-01 23:30:00"
+            tick_lower: 120
+            tick_upper: 250
+            liquidity_delta: 200
+
+      - input: ref('int_daily_close')
+        rows:
+          - pool: "0xpool1"
+            date: "2024-01-01"
+
+    expect:
+      rows:
+        - pool: "0xpool1"
+          date: "2024-01-01"
+          tick_lower: 100
+          tick_upper: 200
+          net_liquidity: 1000
+        - pool: "0xpool1"
+          date: "2024-01-01"
+          tick_lower: 120
+          tick_upper: 250
+          net_liquidity: 200
+        - pool: "0xpool1"
+          date: "2024-01-01"
+          tick_lower: 150
+          tick_upper: 300
+          net_liquidity: 500
+
+  - name: test_range_liquidity_daily_partial_burn_carries_forward
+    description: >
+      Mint on day 1, partial burn on day 2, quiet day 3.
+      The helper must keep the reduced net liquidity on day 3 via the dense spine.
+    model: int_range_liquidity_daily
+
+    given:
+      - input: ref('int_lp_events')
+        rows:
+          - pool: "0xpool1"
+            block_time: "2024-01-01 10:00:00"
+            tick_lower: 0
+            tick_upper: 10
+            liquidity_delta: 1000
+          - pool: "0xpool1"
+            block_time: "2024-01-02 10:00:00"
+            tick_lower: 0
+            tick_upper: 10
+            liquidity_delta: -400
+
+      - input: ref('int_daily_close')
+        rows:
+          - pool: "0xpool1"
+            date: "2024-01-01"
+          - pool: "0xpool1"
+            date: "2024-01-03"
+
+    expect:
+      rows:
+        - pool: "0xpool1"
+          date: "2024-01-01"
+          tick_lower: 0
+          tick_upper: 10
+          net_liquidity: 1000
+        - pool: "0xpool1"
+          date: "2024-01-02"
+          tick_lower: 0
+          tick_upper: 10
+          net_liquidity: 600
+        - pool: "0xpool1"
+          date: "2024-01-03"
+          tick_lower: 0
+          tick_upper: 10
+          net_liquidity: 600
+
+  # ─── int_hourly_snapshot_blocks ────────────────────────────────────────────
+
+  - name: test_hourly_snapshot_blocks_carries_last_swap_state_through_lp_only_hours
+    description: >
+      Hours with no swap but with LP activity must still appear in the hourly spine
+      and carry the most recent swap-derived state forward.
+    model: int_hourly_snapshot_blocks
+
+    given:
+      - input: ref('stg_swaps')
+        rows:
+          - pool: "0xpool1"
+            block_number: 10
+            log_index: 0
+            block_time: "2024-01-01 10:15:00"
+            tick: 100
+            price_token1_in_token0: 2000.0
+          - pool: "0xpool1"
+            block_number: 20
+            log_index: 1
+            block_time: "2024-01-01 12:05:00"
+            tick: 110
+            price_token1_in_token0: 2100.0
+
+      - input: ref('int_lp_events')
+        rows:
+          - pool: "0xpool1"
+            block_number: 30
+            block_time: "2024-01-01 13:20:00"
+            tx_hash: "0xlp1"
+            log_index: 0
+            owner: "0xowner1"
+            tick_lower: 90
+            tick_upper: 120
+            liquidity_delta: 1000
+            amount0: 0.0
+            amount1: 0.0
+            event_type: mint
+
+    expect:
+      rows:
+        - pool: "0xpool1"
+          hour: "2024-01-01 10:00:00"
+          has_swap_hour: 1
+          snapshot_block_number: 10
+          snapshot_log_index: 0
+          snapshot_block_time: "2024-01-01 10:15:00"
+          current_tick: 100
+          price_token1_in_token0: 2000.0
+        - pool: "0xpool1"
+          hour: "2024-01-01 11:00:00"
+          has_swap_hour: 0
+          snapshot_block_number: 10
+          snapshot_log_index: 0
+          snapshot_block_time: "2024-01-01 10:15:00"
+          current_tick: 100
+          price_token1_in_token0: 2000.0
+        - pool: "0xpool1"
+          hour: "2024-01-01 12:00:00"
+          has_swap_hour: 1
+          snapshot_block_number: 20
+          snapshot_log_index: 1
+          snapshot_block_time: "2024-01-01 12:05:00"
+          current_tick: 110
+          price_token1_in_token0: 2100.0
+        - pool: "0xpool1"
+          hour: "2024-01-01 13:00:00"
+          has_swap_hour: 0
+          snapshot_block_number: 20
+          snapshot_log_index: 1
+          snapshot_block_time: "2024-01-01 12:05:00"
+          current_tick: 110
+          price_token1_in_token0: 2100.0
+
+  - name: test_range_liquidity_daily_overlapping_ranges_are_independent
+    description: >
+      Two overlapping ranges in the same pool must keep separate cumulative states.
+      A burn on one range must not affect the other range's net liquidity.
+    model: int_range_liquidity_daily
+
+    given:
+      - input: ref('int_lp_events')
+        rows:
+          - pool: "0xpool1"
+            block_time: "2024-01-01 10:00:00"
+            tick_lower: 100
+            tick_upper: 200
+            liquidity_delta: 1000
+          - pool: "0xpool1"
+            block_time: "2024-01-01 11:00:00"
+            tick_lower: 150
+            tick_upper: 250
+            liquidity_delta: 500
+          - pool: "0xpool1"
+            block_time: "2024-01-02 10:00:00"
+            tick_lower: 100
+            tick_upper: 200
+            liquidity_delta: -400
+
+      - input: ref('int_daily_close')
+        rows:
+          - pool: "0xpool1"
+            date: "2024-01-01"
+          - pool: "0xpool1"
+            date: "2024-01-03"
+
+    expect:
+      rows:
+        - pool: "0xpool1"
+          date: "2024-01-01"
+          tick_lower: 100
+          tick_upper: 200
+          net_liquidity: 1000
+        - pool: "0xpool1"
+          date: "2024-01-01"
+          tick_lower: 150
+          tick_upper: 250
+          net_liquidity: 500
+        - pool: "0xpool1"
+          date: "2024-01-02"
+          tick_lower: 100
+          tick_upper: 200
+          net_liquidity: 600
+        - pool: "0xpool1"
+          date: "2024-01-02"
+          tick_lower: 150
+          tick_upper: 250
+          net_liquidity: 500
+        - pool: "0xpool1"
+          date: "2024-01-03"
+          tick_lower: 100
+          tick_upper: 200
+          net_liquidity: 600
+        - pool: "0xpool1"
+          date: "2024-01-03"
+          tick_lower: 150
+          tick_upper: 250
+          net_liquidity: 500
+
+  # ─── int_active_tvl_daily ────────────────────────────────────────────────────
+
+  - name: test_active_tvl_daily_burned_excluded
+    description: >
+      Pool1 has no surviving range-state row and is therefore excluded.
+      Pool2 is a realistic USDC/WETH 0.05% position on range [196250, 200310]
+      with L=1e14 at the lower boundary.
+    model: int_active_tvl_daily
+
+    given:
+      - input: ref('int_daily_close_dense')
+        rows:
+          - pool: "0xpool1"
+            date: "2024-01-01"
+            close_tick: 196250
+            close_price: 3001.9048030627105
+          - pool: "0xpool2"
+            date: "2024-01-01"
+            close_tick: 196250
+            close_price: 3001.9048030627105
+
+      - input: ref('int_range_liquidity_daily')
+        rows:
+          - pool: "0xpool2"
+            date: "2024-01-01"
+            tick_lower: 196250
+            tick_upper: 200310
+            net_liquidity: 100000000000000
+
+      - input: ref('stg_pools')
+        rows:
+          - pool: "0xpool1"
+            fee_bps: 0.05
+            tick_spacing: 10
+            token0_address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+            token0_symbol: "USDC"
+            token0_decimals: 6
+            token1_address: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+            token1_symbol: "WETH"
+            token1_decimals: 18
+            deployment_block: 1
+            deployment_ts: "2021-05-05 00:00:00"
+          - pool: "0xpool2"
+            fee_bps: 0.05
+            tick_spacing: 10
+            token0_address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+            token0_symbol: "USDC"
+            token0_decimals: 6
+            token1_address: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+            token1_symbol: "WETH"
+            token1_decimals: 18
+            deployment_block: 1
+            deployment_ts: "2021-05-05 00:00:00"
+
+    expect:
+      rows:
+        - pool: "0xpool2"
+          date: "2024-01-01"
+          active_range_count: 1
+          active_tvl_token0: 1006.5595350351274
+
+  - name: test_active_tvl_daily_out_of_range_excluded
+    description: >
+      Pool1 range [194000, 195000] is out of range at tick 198070 and must be excluded.
+      Pool2 uses the production-like range [196250, 200310] at the exact price for tick 198070.
+    model: int_active_tvl_daily
+
+    given:
+      - input: ref('int_daily_close_dense')
+        rows:
+          - pool: "0xpool1"
+            date: "2024-01-01"
+            close_tick: 198070
+            close_price: 2502.414637985149
+          - pool: "0xpool2"
+            date: "2024-01-01"
+            close_tick: 198070
+            close_price: 2502.414637985149
+
+      - input: ref('int_range_liquidity_daily')
+        rows:
+          - pool: "0xpool1"
+            date: "2024-01-01"
+            tick_lower: 194000
+            tick_upper: 195000
+            net_liquidity: 100000000000000
+          - pool: "0xpool2"
+            date: "2024-01-01"
+            tick_lower: 196250
+            tick_upper: 200310
+            net_liquidity: 100000000000000
+
+      - input: ref('stg_pools')
+        rows:
+          - pool: "0xpool1"
+            fee_bps: 0.05
+            tick_spacing: 10
+            token0_address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+            token0_symbol: "USDC"
+            token0_decimals: 6
+            token1_address: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+            token1_symbol: "WETH"
+            token1_decimals: 18
+            deployment_block: 1
+            deployment_ts: "2021-05-05 00:00:00"
+          - pool: "0xpool2"
+            fee_bps: 0.05
+            tick_spacing: 10
+            token0_address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+            token0_symbol: "USDC"
+            token0_decimals: 6
+            token1_address: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+            token1_symbol: "WETH"
+            token1_decimals: 18
+            deployment_block: 1
+            deployment_ts: "2021-05-05 00:00:00"
+
+    expect:
+      rows:
+        - pool: "0xpool2"
+          date: "2024-01-01"
+          active_range_count: 1
+          active_tvl_token0: 965.1100974943738
+
+  - name: test_active_tvl_daily_partial_burn
+    description: >
+      Mint L=1.5e14, burn 0.5e14, net=1e14. Uses the exact boundary price for tick 196250.
+    model: int_active_tvl_daily
+
+    given:
+      - input: ref('int_daily_close_dense')
+        rows:
+          - pool: "0xpool1"
+            date: "2024-01-01"
+            close_tick: 196250
+            close_price: 3001.9048030627105
+
+      - input: ref('int_range_liquidity_daily')
+        rows:
+          - pool: "0xpool1"
+            date: "2024-01-01"
+            tick_lower: 196250
+            tick_upper: 200310
+            net_liquidity: 100000000000000
+
+      - input: ref('stg_pools')
+        rows:
+          - pool: "0xpool1"
+            fee_bps: 0.05
+            tick_spacing: 10
+            token0_address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+            token0_symbol: "USDC"
+            token0_decimals: 6
+            token1_address: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+            token1_symbol: "WETH"
+            token1_decimals: 18
+            deployment_block: 1
+            deployment_ts: "2021-05-05 00:00:00"
+
+    expect:
+      rows:
+        - pool: "0xpool1"
+          date: "2024-01-01"
+          active_range_count: 1
+          active_tvl_token0: 1006.5595350351274
+
+  - name: test_active_tvl_daily_two_positions_same_pool
+    description: >
+      Two LPs on the same range aggregate. TVL must be 2x the single-position case.
+    model: int_active_tvl_daily
+
+    given:
+      - input: ref('int_daily_close_dense')
+        rows:
+          - pool: "0xpool1"
+            date: "2024-01-01"
+            close_tick: 196250
+            close_price: 3001.9048030627105
+
+      - input: ref('int_range_liquidity_daily')
+        rows:
+          - pool: "0xpool1"
+            date: "2024-01-01"
+            tick_lower: 196250
+            tick_upper: 200310
+            net_liquidity: 200000000000000
+
+      - input: ref('stg_pools')
+        rows:
+          - pool: "0xpool1"
+            fee_bps: 0.05
+            tick_spacing: 10
+            token0_address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+            token0_symbol: "USDC"
+            token0_decimals: 6
+            token1_address: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+            token1_symbol: "WETH"
+            token1_decimals: 18
+            deployment_block: 1
+            deployment_ts: "2021-05-05 00:00:00"
+
+    expect:
+      rows:
+        - pool: "0xpool1"
+          date: "2024-01-01"
+          active_range_count: 1
+          active_tvl_token0: 2013.1190700702548
+
+  - name: test_active_tvl_daily_both_tokens_contribute
+    description: >
+      Production-like in-range case on [196250, 200310] at the exact price for tick 198070.
+      Both token0 and token1 contribute to active TVL.
+    model: int_active_tvl_daily
+
+    given:
+      - input: ref('int_daily_close_dense')
+        rows:
+          - pool: "0xpool1"
+            date: "2024-01-01"
+            close_tick: 198070
+            close_price: 2502.414637985149
+
+      - input: ref('int_range_liquidity_daily')
+        rows:
+          - pool: "0xpool1"
+            date: "2024-01-01"
+            tick_lower: 196250
+            tick_upper: 200310
+            net_liquidity: 100000000000000
+
+      - input: ref('stg_pools')
+        rows:
+          - pool: "0xpool1"
+            fee_bps: 0.05
+            tick_spacing: 10
+            token0_address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+            token0_symbol: "USDC"
+            token0_decimals: 6
+            token1_address: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+            token1_symbol: "WETH"
+            token1_decimals: 18
+            deployment_block: 1
+            deployment_ts: "2021-05-05 00:00:00"
+
+    expect:
+      rows:
+        - pool: "0xpool1"
+          date: "2024-01-01"
+          active_range_count: 1
+          active_tvl_token0: 965.1100974943738
+
+  - name: test_active_tvl_daily_multiday_persistence
+    description: >
+      A realistic position on [196250, 200310] persists across days as price moves.
+      The position stays in-range both days and active TVL reprices accordingly.
+    model: int_active_tvl_daily
+
+    given:
+      - input: ref('int_daily_close_dense')
+        rows:
+          - pool: "0xpool1"
+            date: "2024-01-01"
+            close_tick: 198070
+            close_price: 2502.414637985149
+          - pool: "0xpool1"
+            date: "2024-01-02"
+            close_tick: 199350
+            close_price: 2201.7720656090664
+
+      - input: ref('int_range_liquidity_daily')
+        rows:
+          - pool: "0xpool1"
+            date: "2024-01-01"
+            tick_lower: 196250
+            tick_upper: 200310
+            net_liquidity: 100000000000000
+          - pool: "0xpool1"
+            date: "2024-01-02"
+            tick_lower: 196250
+            tick_upper: 200310
+            net_liquidity: 100000000000000
+
+      - input: ref('stg_pools')
+        rows:
+          - pool: "0xpool1"
+            fee_bps: 0.05
+            tick_spacing: 10
+            token0_address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+            token0_symbol: "USDC"
+            token0_decimals: 6
+            token1_address: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+            token1_symbol: "WETH"
+            token1_decimals: 18
+            deployment_block: 1
+            deployment_ts: "2021-05-05 00:00:00"
+
+    expect:
+      rows:
+        - pool: "0xpool1"
+          date: "2024-01-01"
+          active_range_count: 1
+          active_tvl_token0: 965.1100974943738
+        - pool: "0xpool1"
+          date: "2024-01-02"
+          active_range_count: 1
+          active_tvl_token0: 893.6123581399345
+
+  # ─── int_active_liquidity_daily ──────────────────────────────────────────────
+
+  - name: test_active_liquidity_daily_basic
+    description: >
+      Verifies active liquidity computation based on close_tick position within ranges.
+      Scenario: 2 positions (A=[100,200] L=1000, B=[150,300] L=500).
+    model: int_active_liquidity_daily
+
+    given:
+      - input: ref('int_daily_close_dense')
+        rows:
+          - pool: "0xpool1"
+            date: "2024-01-01"
+            close_tick: 120
+            close_price: 3500.0
+          - pool: "0xpool1"
+            date: "2024-01-02"
+            close_tick: 170
+            close_price: 3400.0
+          - pool: "0xpool1"
+            date: "2024-01-03"
+            close_tick: 250
+            close_price: 3300.0
+
+      - input: ref('int_range_liquidity_daily')
+        rows:
+          - pool: "0xpool1"
+            date: "2024-01-01"
+            tick_lower: 100
+            tick_upper: 200
+            net_liquidity: 1000
+          - pool: "0xpool1"
+            date: "2024-01-02"
+            tick_lower: 100
+            tick_upper: 200
+            net_liquidity: 1000
+          - pool: "0xpool1"
+            date: "2024-01-02"
+            tick_lower: 150
+            tick_upper: 300
+            net_liquidity: 500
+          - pool: "0xpool1"
+            date: "2024-01-03"
+            tick_lower: 100
+            tick_upper: 200
+            net_liquidity: 1000
+          - pool: "0xpool1"
+            date: "2024-01-03"
+            tick_lower: 150
+            tick_upper: 300
+            net_liquidity: 500
+
+    expect:
+      rows:
+        - pool: "0xpool1"
+          date: "2024-01-01"
+          close_tick: 120
+          active_liquidity: 1000
+        - pool: "0xpool1"
+          date: "2024-01-02"
+          close_tick: 170
+          active_liquidity: 1500
+        - pool: "0xpool1"
+          date: "2024-01-03"
+          close_tick: 250
+          active_liquidity: 500
+
+  - name: test_active_liquidity_daily_tick_upper_exclusive
+    description: >
+      Verifies that tick_upper is an EXCLUSIVE bound (Uniswap V3 convention).
+    model: int_active_liquidity_daily
+
+    given:
+      - input: ref('int_daily_close_dense')
+        rows:
+          - pool: "0xpool1"
+            date: "2024-01-01"
+            close_tick: 199
+            close_price: 3500.0
+          - pool: "0xpool1"
+            date: "2024-01-02"
+            close_tick: 200
+            close_price: 3490.0
+
+      - input: ref('int_range_liquidity_daily')
+        rows:
+          - pool: "0xpool1"
+            date: "2024-01-01"
+            tick_lower: 100
+            tick_upper: 200
+            net_liquidity: 1000
+          - pool: "0xpool1"
+            date: "2024-01-02"
+            tick_lower: 100
+            tick_upper: 200
+            net_liquidity: 1000
+
+    expect:
+      rows:
+        - pool: "0xpool1"
+          date: "2024-01-01"
+          close_tick: 199
+          active_liquidity: 1000
+
+  - name: test_active_liquidity_daily_burn_reduces_liquidity
+    description: >
+      Verifies that a burn correctly reduces active liquidity without retroactivity.
+    model: int_active_liquidity_daily
+
+    given:
+      - input: ref('int_daily_close_dense')
+        rows:
+          - pool: "0xpool1"
+            date: "2024-01-01"
+            close_tick: 150
+            close_price: 3500.0
+          - pool: "0xpool1"
+            date: "2024-01-03"
+            close_tick: 150
+            close_price: 3400.0
+
+      - input: ref('int_range_liquidity_daily')
+        rows:
+          - pool: "0xpool1"
+            date: "2024-01-01"
+            tick_lower: 100
+            tick_upper: 200
+            net_liquidity: 1000
+          - pool: "0xpool1"
+            date: "2024-01-03"
+            tick_lower: 100
+            tick_upper: 200
+            net_liquidity: 600
+
+    expect:
+      rows:
+        - pool: "0xpool1"
+          date: "2024-01-01"
+          close_tick: 150
+          active_liquidity: 1000
+        - pool: "0xpool1"
+          date: "2024-01-03"
+          close_tick: 150
+          active_liquidity: 600
+
+  - name: test_active_liquidity_daily_same_day_mint
+    description: >
+      Documents intra-day snapshot behavior: all LP events on the same calendar day
+      are included regardless of whether they occur before or after the close swap.
+    model: int_active_liquidity_daily
+
+    given:
+      - input: ref('int_daily_close_dense')
+        rows:
+          - pool: "0xpool1"
+            date: "2024-01-01"
+            close_tick: 170
+            close_price: 3500.0
+
+      - input: ref('int_range_liquidity_daily')
+        rows:
+          - pool: "0xpool1"
+            date: "2024-01-01"
+            tick_lower: 100
+            tick_upper: 200
+            net_liquidity: 1000
+          - pool: "0xpool1"
+            date: "2024-01-01"
+            tick_lower: 150
+            tick_upper: 300
+            net_liquidity: 500
+          - pool: "0xpool1"
+            date: "2024-01-01"
+            tick_lower: 120
+            tick_upper: 250
+            net_liquidity: 200
+
+    expect:
+      rows:
+        - pool: "0xpool1"
+          date: "2024-01-01"
+          close_tick: 170
+          active_liquidity: 1700
+
+  # ─── int_tick_changes ────────────────────────────────────────────────────────
+
+  - name: test_tick_changes_session_grouping
+    description: >
+      Consecutive swaps at the same tick are grouped into one session;
+      each tick change opens a new session.
+    model: int_tick_changes
+
+    given:
+      - input: ref('stg_swaps')
+        rows:
+          - pool: "0xpool1"
+            block_number: 1
+            log_index: 0
+            block_time: "2024-01-01 10:00:00"
+            tick: 200
+            amount0: 100.0
+            amount1: -0.03
+            liquidity: 500000
+            price_token1_in_token0: 3333.0
+            tx_hash: "0xaaa"
+            sender: "0x1111"
+            recipient: "0x1111"
+            token0_symbol: "USDC"
+            token1_symbol: "WETH"
+          - pool: "0xpool1"
+            block_number: 1
+            log_index: 1
+            block_time: "2024-01-01 10:00:00"
+            tick: 200
+            amount0: 50.0
+            amount1: -0.015
+            liquidity: 500000
+            price_token1_in_token0: 3333.0
+            tx_hash: "0xbbb"
+            sender: "0x2222"
+            recipient: "0x2222"
+            token0_symbol: "USDC"
+            token1_symbol: "WETH"
+          - pool: "0xpool1"
+            block_number: 2
+            log_index: 0
+            block_time: "2024-01-01 10:01:00"
+            tick: 201
+            amount0: 200.0
+            amount1: -0.06
+            liquidity: 500000
+            price_token1_in_token0: 3330.0
+            tx_hash: "0xccc"
+            sender: "0x3333"
+            recipient: "0x3333"
+            token0_symbol: "USDC"
+            token1_symbol: "WETH"
+          - pool: "0xpool1"
+            block_number: 3
+            log_index: 0
+            block_time: "2024-01-01 10:02:00"
+            tick: 199
+            amount0: 80.0
+            amount1: -0.024
+            liquidity: 500000
+            price_token1_in_token0: 3336.6
+            tx_hash: "0xddd"
+            sender: "0x4444"
+            recipient: "0x4444"
+            token0_symbol: "USDC"
+            token1_symbol: "WETH"
+
+    expect:
+      rows:
+        - pool: "0xpool1"
+          session_id: 1
+          tick: 200
+          swap_count: 2
+          volume_token0_equiv: 149.98499999999999
+          duration_seconds: 60
+          next_tick: 201
+          direction: "up"
+        - pool: "0xpool1"
+          session_id: 2
+          tick: 201
+          swap_count: 1
+          volume_token0_equiv: 199.79999999999998
+          duration_seconds: 60
+          next_tick: 199
+          direction: "down"
+        - pool: "0xpool1"
+          session_id: 3
+          tick: 199
+          swap_count: 1
+          volume_token0_equiv: 80.0784
+          duration_seconds: ~
+          next_tick: ~
+          direction: ~
+
+  - name: test_tick_changes_single_swap
+    description: >
+      Single swap → single session, open (duration_seconds IS NULL).
+    model: int_tick_changes
+
+    given:
+      - input: ref('stg_swaps')
+        rows:
+          - pool: "0xpool1"
+            block_number: 1
+            log_index: 0
+            block_time: "2024-01-01 10:00:00"
+            tick: 150
+            amount0: 500.0
+            amount1: -0.14
+            liquidity: 200000
+            price_token1_in_token0: 3500.0
+            tx_hash: "0xaaa"
+            sender: "0x1111"
+            recipient: "0x1111"
+            token0_symbol: "USDC"
+            token1_symbol: "WETH"
+
+    expect:
+      rows:
+        - pool: "0xpool1"
+          session_id: 1
+          tick: 150
+          swap_count: 1
+          volume_token0_equiv: 490.00000000000006
+          duration_seconds: ~
+          next_tick: ~
+          direction: ~
+
+  # ─── int_lp_events ───────────────────────────────────────────────────────────
+
+  - name: test_lp_events_sign_convention
+    description: >
+      Verifies the UNION logic and sign convention for int_lp_events.
+      Mints pass through with positive deltas; burns are negated.
+    model: int_lp_events
+
+    given:
+      - input: ref('stg_mints')
+        rows:
+          - pool: "0xpool1"
+            block_number: 10
+            block_time: "2024-01-01 10:00:00"
+            tx_hash: "0xmint1"
+            log_index: 0
+            owner: "0x1111"
+            sender: "0x1111"
+            tick_lower: 100
+            tick_upper: 200
+            liquidity_delta: 500
+            amount0: 100.0
+            amount1: 0.05
+            token0_symbol: "USDC"
+            token1_symbol: "WETH"
+
+      - input: ref('stg_burns')
+        rows:
+          - pool: "0xpool1"
+            block_number: 20
+            block_time: "2024-01-02 10:00:00"
+            tx_hash: "0xburn1"
+            log_index: 0
+            owner: "0x1111"
+            tick_lower: 100
+            tick_upper: 200
+            liquidity_delta: 300
+            amount0: 60.0
+            amount1: 0.03
+            token0_symbol: "USDC"
+            token1_symbol: "WETH"
+
+    expect:
+      rows:
+        - pool: "0xpool1"
+          tx_hash: "0xmint1"
+          liquidity_delta: 500
+          amount0: 100.0
+          amount1: 0.05
+          event_type: mint
+        - pool: "0xpool1"
+          tx_hash: "0xburn1"
+          liquidity_delta: -300
+          amount0: -60.0
+          amount1: -0.03
+          event_type: burn
+
+  - name: test_lp_events_net_amounts_cancel
+    description: >
+      Verifies that when a position is fully burned after minting,
+      the sum of (mint + burn) amounts equals zero.
+    model: int_lp_events
+
+    given:
+      - input: ref('stg_mints')
+        rows:
+          - pool: "0xpool1"
+            block_number: 10
+            block_time: "2024-01-01 10:00:00"
+            tx_hash: "0xmint1"
+            log_index: 0
+            owner: "0x1111"
+            sender: "0x1111"
+            tick_lower: 100
+            tick_upper: 200
+            liquidity_delta: 1000
+            amount0: 100.0
+            amount1: 0.05
+            token0_symbol: "USDC"
+            token1_symbol: "WETH"
+
+      - input: ref('stg_burns')
+        rows:
+          - pool: "0xpool1"
+            block_number: 20
+            block_time: "2024-01-01 12:00:00"
+            tx_hash: "0xburn1"
+            log_index: 0
+            owner: "0x1111"
+            tick_lower: 100
+            tick_upper: 200
+            liquidity_delta: 1000
+            amount0: 100.0
+            amount1: 0.05
+            token0_symbol: "USDC"
+            token1_symbol: "WETH"
+
+    expect:
+      rows:
+        - pool: "0xpool1"
+          tx_hash: "0xmint1"
+          liquidity_delta: 1000
+          amount0: 100.0
+          amount1: 0.05
+          event_type: mint
+        - pool: "0xpool1"
+          tx_hash: "0xburn1"
+          liquidity_delta: -1000
+          amount0: -100.0
+          amount1: -0.05
+          event_type: burn
+
+  # ─── int_tick_boundary_deltas ───────────────────────────────────────────────
+
+  - name: test_tick_boundary_deltas_expand_signed_lp_events
+    description: >
+      Each LP event must expand to two boundary rows:
+      lower keeps liquidity_delta, upper uses its negation.
+      This stays correct for both mints and already-signed burns.
+    model: int_tick_boundary_deltas
+
+    given:
+      - input: ref('int_lp_events')
+        rows:
+          - pool: "0xpool1"
+            block_number: 10
+            block_time: "2024-01-01 10:00:00"
+            tx_hash: "0xmint1"
+            log_index: 0
+            owner: "0x1111"
+            tick_lower: 100
+            tick_upper: 200
+            liquidity_delta: 500
+            amount0: 100.0
+            amount1: 0.05
+            event_type: mint
+          - pool: "0xpool1"
+            block_number: 20
+            block_time: "2024-01-01 11:00:00"
+            tx_hash: "0xburn1"
+            log_index: 1
+            owner: "0x1111"
+            tick_lower: 100
+            tick_upper: 200
+            liquidity_delta: -300
+            amount0: -60.0
+            amount1: -0.03
+            event_type: burn
+
+    expect:
+      rows:
+        - pool: "0xpool1"
+          tx_hash: "0xmint1"
+          tick_boundary: 100
+          liquidity_net_delta: 500
+          boundary_side: lower
+        - pool: "0xpool1"
+          tx_hash: "0xmint1"
+          tick_boundary: 200
+          liquidity_net_delta: -500
+          boundary_side: upper
+        - pool: "0xpool1"
+          tx_hash: "0xburn1"
+          tick_boundary: 100
+          liquidity_net_delta: -300
+          boundary_side: lower
+        - pool: "0xpool1"
+          tx_hash: "0xburn1"
+          tick_boundary: 200
+          liquidity_net_delta: 300
+          boundary_side: upper
+
+  # ─── int_daily_close ─────────────────────────────────────────────────────────
+
+  - name: test_current_state_uses_log_index_within_block
+    description: >
+      Verifies that int_current_state picks the last swap by (block_number, log_index).
+      Two swaps share block 10; log_index=1 must win.
+    model: int_current_state
+
+    given:
+      - input: ref('stg_swaps')
+        rows:
+          - pool: "0xpool1"
+            block_number: 10
+            block_time: "2024-01-01 10:00:00"
+            log_index: 0
+            tx_hash: "0xswap1"
+            tick: 200
+            price_token1_in_token0: 3500.0
+            amount0: 1000.0
+            amount1: -0.285
+            liquidity: 100000
+            sender: "0x1111"
+            recipient: "0x1111"
+            token0_symbol: "USDC"
+            token1_symbol: "WETH"
+          - pool: "0xpool1"
+            block_number: 10
+            block_time: "2024-01-01 10:00:00"
+            log_index: 1
+            tx_hash: "0xswap2"
+            tick: 201
+            price_token1_in_token0: 3490.0
+            amount0: -500.0
+            amount1: 0.143
+            liquidity: 100000
+            sender: "0x2222"
+            recipient: "0x2222"
+            token0_symbol: "USDC"
+            token1_symbol: "WETH"
+
+      - input: ref('stg_pools')
+        rows:
+          - pool: "0xpool1"
+            fee_bps: 0.05
+            tick_spacing: 10
+            token0_address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+            token0_symbol: "USDC"
+            token0_decimals: 6
+            token1_address: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+            token1_symbol: "WETH"
+            token1_decimals: 18
+            deployment_block: 1
+            deployment_ts: "2021-05-05 00:00:00"
+
+    expect:
+      rows:
+        - pool: "0xpool1"
+          current_tick: 201
+          price_token1_in_token0: 3490.0
+
+  - name: test_swaps_tick_volume_attributes_swaps_to_pre_swap_tick
+    description: >
+      Swaps should be attributed to the tick that was active immediately before
+      execution. The first observed swap falls back to tick_after and is flagged.
+    model: int_swaps_tick_volume
+
+    given:
+      - input: ref('int_swaps_enriched')
+        rows:
+          - pool: "0xpool1"
+            block_number: 10
+            log_index: 0
+            block_time: "2024-01-01 10:00:00"
+            tick_before: ~
+            price_before: ~
+            tick_after: 100
+            price_after: 2000.0
+            next_block_time: "2024-01-01 10:01:00"
+            active_liquidity_at_swap: 100000.0
+            volume_token0: 1000.0
+            volume_token1: 0.5
+            volume_token0_equiv: 1000.0
+            token0_in: 1000.0
+            token1_in: 0.0
+            fees_generated_token0: 0.5
+            fees_generated_token1: 0.0
+            fees_generated_token0_equiv: 0.5
+          - pool: "0xpool1"
+            block_number: 11
+            log_index: 0
+            block_time: "2024-01-01 10:01:00"
+            tick_before: 100
+            price_before: 2000.0
+            tick_after: 101
+            price_after: 2001.0
+            next_block_time: "2024-01-01 10:02:00"
+            active_liquidity_at_swap: 100000.0
+            volume_token0: 500.0
+            volume_token1: 0.25
+            volume_token0_equiv: 500.0
+            token0_in: 500.0
+            token1_in: 0.0
+            fees_generated_token0: 0.25
+            fees_generated_token1: 0.0
+            fees_generated_token0_equiv: 0.25
+
+    expect:
+      rows:
+        - pool: "0xpool1"
+          block_number: 10
+          active_tick: 100
+          fallback_after_swap: 1
+          active_price_token1_in_token0: 2000.0
+          volume_token0_equiv: 1000.0
+        - pool: "0xpool1"
+          block_number: 11
+          active_tick: 100
+          fallback_after_swap: 0
+          active_price_token1_in_token0: 2000.0
+          volume_token0_equiv: 500.0
+
+  - name: test_weekly_tick_liquidity_net_keeps_last_daily_snapshot_of_week
+    description: >
+      Weekly boundary liquidity must keep the last observed daily snapshot of the
+      week, because liquidity is a stock and should never be summed across days.
+    model: int_weekly_tick_liquidity_net
+
+    given:
+      - input: ref('int_daily_tick_liquidity_net')
+        rows:
+          - pool: "0xpool1"
+            date: "2024-01-01"
+            tick: 100
+            liquidity_net: 1000
+          - pool: "0xpool1"
+            date: "2024-01-03"
+            tick: 100
+            liquidity_net: 800
+          - pool: "0xpool1"
+            date: "2024-01-08"
+            tick: 100
+            liquidity_net: 700
+
+    expect:
+      rows:
+        - pool: "0xpool1"
+          week_start: "2024-01-01"
+          tick: 100
+          liquidity_net: 800
+        - pool: "0xpool1"
+          week_start: "2024-01-08"
+          tick: 100
+          liquidity_net: 700
+
+  - name: test_tick_volume_daily_aggregates_volume_by_active_tick
+    description: >
+      Daily tick volume should aggregate exact hourly flow by tick and keep
+      track of how many hourly rows include first-swap fallback assignments.
+    model: int_tick_volume_daily
+
+    given:
+      - input: ref('int_tick_volume_hourly')
+        rows:
+          - pool: "0xpool1"
+            hour: "2024-01-01 10:00:00"
+            tick: 100
+            swap_count: 2
+            fallback_after_swap_count: 1
+            volume_token0: 1500.0
+            volume_token1: 0.75
+            volume_token0_equiv: 1500.0
+            fees_generated_token0: 0.75
+            fees_generated_token1: 0.0
+            fees_generated_token0_equiv: 0.75
+          - pool: "0xpool1"
+            hour: "2024-01-01 11:00:00"
+            tick: 100
+            swap_count: 1
+            fallback_after_swap_count: 0
+            volume_token0: 250.0
+            volume_token1: 0.125
+            volume_token0_equiv: 250.0
+            fees_generated_token0: 0.125
+            fees_generated_token1: 0.0
+            fees_generated_token0_equiv: 0.125
+
+    expect:
+      rows:
+        - pool: "0xpool1"
+          date: "2024-01-01"
+          tick: 100
+          swap_count: 3
+          fallback_after_swap_count: 1
+          volume_token0: 1750.0
+          volume_token1: 0.875
+          volume_token0_equiv: 1750.0
+          fees_generated_token0_equiv: 0.875
+
+  - name: test_tick_volume_hourly_aggregates_volume_by_active_tick
+    description: >
+      Hourly tick volume should aggregate swap-level flow by active_tick within
+      each hour and preserve both token legs plus token0-equivalent flow.
+    model: int_tick_volume_hourly
+
+    given:
+      - input: ref('int_swaps_tick_volume')
+        rows:
+          - pool: "0xpool1"
+            block_number: 10
+            log_index: 0
+            block_time: "2024-01-01 10:00:00"
+            active_tick: 100
+            fallback_after_swap: 1
+            tick_before: ~
+            tick_after: 100
+            active_price_token1_in_token0: 2000.0
+            price_before: ~
+            price_after: 2000.0
+            active_liquidity_at_swap: 100000.0
+            volume_token0: 1000.0
+            volume_token1: 0.5
+            volume_token0_equiv: 1000.0
+            token0_in: 1000.0
+            token1_in: 0.0
+            fees_generated_token0: 0.5
+            fees_generated_token1: 0.0
+            fees_generated_token0_equiv: 0.5
+          - pool: "0xpool1"
+            block_number: 11
+            log_index: 0
+            block_time: "2024-01-01 10:45:00"
+            active_tick: 100
+            fallback_after_swap: 0
+            tick_before: 100
+            tick_after: 101
+            active_price_token1_in_token0: 2000.0
+            price_before: 2000.0
+            price_after: 2001.0
+            active_liquidity_at_swap: 100000.0
+            volume_token0: 500.0
+            volume_token1: 0.25
+            volume_token0_equiv: 500.0
+            token0_in: 500.0
+            token1_in: 0.0
+            fees_generated_token0: 0.25
+            fees_generated_token1: 0.0
+            fees_generated_token0_equiv: 0.25
+          - pool: "0xpool1"
+            block_number: 12
+            log_index: 0
+            block_time: "2024-01-01 11:05:00"
+            active_tick: 101
+            fallback_after_swap: 0
+            tick_before: 101
+            tick_after: 102
+            active_price_token1_in_token0: 2001.0
+            price_before: 2001.0
+            price_after: 2002.0
+            active_liquidity_at_swap: 100000.0
+            volume_token0: 250.0
+            volume_token1: 0.125
+            volume_token0_equiv: 250.0
+            token0_in: 250.0
+            token1_in: 0.0
+            fees_generated_token0: 0.125
+            fees_generated_token1: 0.0
+            fees_generated_token0_equiv: 0.125
+
+    expect:
+      rows:
+        - pool: "0xpool1"
+          hour: "2024-01-01 10:00:00"
+          tick: 100
+          swap_count: 2
+          fallback_after_swap_count: 1
+          volume_token0: 1500.0
+          volume_token1: 0.75
+          volume_token0_equiv: 1500.0
+          fees_generated_token0_equiv: 0.75
+        - pool: "0xpool1"
+          hour: "2024-01-01 11:00:00"
+          tick: 101
+          swap_count: 1
+          fallback_after_swap_count: 0
+          volume_token0: 250.0
+          volume_token1: 0.125
+          volume_token0_equiv: 250.0
+          fees_generated_token0_equiv: 0.125
+
+  - name: test_tick_volume_weekly_aggregates_hourly_flow_by_week
+    description: >
+      Weekly tick volume should aggregate exact hourly flow into Monday-start
+      calendar weeks without losing token0/token1 composition.
+    model: int_tick_volume_weekly
+
+    given:
+      - input: ref('int_tick_volume_hourly')
+        rows:
+          - pool: "0xpool1"
+            hour: "2024-01-01 10:00:00"
+            tick: 100
+            swap_count: 2
+            fallback_after_swap_count: 1
+            volume_token0: 1500.0
+            volume_token1: 0.75
+            volume_token0_equiv: 1500.0
+            fees_generated_token0: 0.75
+            fees_generated_token1: 0.0
+            fees_generated_token0_equiv: 0.75
+          - pool: "0xpool1"
+            hour: "2024-01-03 11:00:00"
+            tick: 100
+            swap_count: 1
+            fallback_after_swap_count: 0
+            volume_token0: 250.0
+            volume_token1: 0.125
+            volume_token0_equiv: 250.0
+            fees_generated_token0: 0.125
+            fees_generated_token1: 0.0
+            fees_generated_token0_equiv: 0.125
+          - pool: "0xpool1"
+            hour: "2024-01-08 09:00:00"
+            tick: 100
+            swap_count: 1
+            fallback_after_swap_count: 0
+            volume_token0: 300.0
+            volume_token1: 0.15
+            volume_token0_equiv: 300.0
+            fees_generated_token0: 0.15
+            fees_generated_token1: 0.0
+            fees_generated_token0_equiv: 0.15
+
+    expect:
+      rows:
+        - pool: "0xpool1"
+          week_start: "2024-01-01"
+          tick: 100
+          swap_count: 3
+          fallback_after_swap_count: 1
+          volume_token0: 1750.0
+          volume_token1: 0.875
+          volume_token0_equiv: 1750.0
+          fees_generated_token0_equiv: 0.875
+        - pool: "0xpool1"
+          week_start: "2024-01-08"
+          tick: 100
+          swap_count: 1
+          fallback_after_swap_count: 0
+          volume_token0: 300.0
+          volume_token1: 0.15
+          volume_token0_equiv: 300.0
+          fees_generated_token0_equiv: 0.15
+
+  - name: test_daily_close_uses_log_index_within_block
+    description: >
+      Verifies that int_daily_close picks the last swap by (block_number, log_index).
+    model: int_daily_close
+
+    given:
+      - input: ref('stg_swaps')
+        rows:
+          - pool: "0xpool1"
+            block_number: 10
+            block_time: "2024-01-01 10:00:00"
+            log_index: 0
+            tx_hash: "0xswap1"
+            tick: 200
+            price_token1_in_token0: 3500.0
+            amount0: 1000.0
+            amount1: -0.285
+            liquidity: 100000
+            sender: "0x1111"
+            recipient: "0x1111"
+            token0_symbol: "USDC"
+            token1_symbol: "WETH"
+          - pool: "0xpool1"
+            block_number: 10
+            block_time: "2024-01-01 10:00:00"
+            log_index: 1
+            tx_hash: "0xswap2"
+            tick: 201
+            price_token1_in_token0: 3490.0
+            amount0: -500.0
+            amount1: 0.143
+            liquidity: 100000
+            sender: "0x2222"
+            recipient: "0x2222"
+            token0_symbol: "USDC"
+            token1_symbol: "WETH"
+
+      - input: ref('stg_pools')
+        rows:
+          - pool: "0xpool1"
+            fee_bps: 0.05
+            tick_spacing: 10
+            token0_address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+            token0_symbol: "USDC"
+            token0_decimals: 6
+            token1_address: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+            token1_symbol: "WETH"
+            token1_decimals: 18
+            deployment_block: 1
+            deployment_ts: "2021-05-05 00:00:00"
+
+    expect:
+      rows:
+        - pool: "0xpool1"
+          date: "2024-01-01"
+          close_tick: 201
+          close_price: 3490.0
+
+  - name: test_daily_close_argmax_selects_last_block
+    description: >
+      Verifies that argMax picks the tick/price from the highest block_number, not the first.
+    model: int_daily_close
+
+    given:
+      - input: ref('stg_swaps')
+        rows:
+          - pool: "0xpool1"
+            block_number: 10
+            block_time: "2024-01-01 10:00:00"
+            log_index: 0
+            tx_hash: "0xswap1"
+            tick: 200
+            price_token1_in_token0: 3500.0
+            amount0: 1000.0
+            amount1: -0.285
+            liquidity: 100000
+            sender: "0x1111"
+            recipient: "0x1111"
+            token0_symbol: "USDC"
+            token1_symbol: "WETH"
+          - pool: "0xpool1"
+            block_number: 20
+            block_time: "2024-01-01 18:00:00"
+            log_index: 0
+            tx_hash: "0xswap2"
+            tick: 201
+            price_token1_in_token0: 3490.0
+            amount0: -500.0
+            amount1: 0.143
+            liquidity: 100000
+            sender: "0x2222"
+            recipient: "0x2222"
+            token0_symbol: "USDC"
+            token1_symbol: "WETH"
+
+      - input: ref('stg_pools')
+        rows:
+          - pool: "0xpool1"
+            fee_bps: 0.05
+            tick_spacing: 10
+            token0_address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+            token0_symbol: "USDC"
+            token0_decimals: 6
+            token1_address: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+            token1_symbol: "WETH"
+            token1_decimals: 18
+            deployment_block: 1
+            deployment_ts: "2021-05-05 00:00:00"
+
+    expect:
+      rows:
+        - pool: "0xpool1"
+          date: "2024-01-01"
+          close_tick: 201
+          close_price: 3490.0
+
+  - name: test_daily_close_multiday
+    description: >
+      Verifies that int_daily_close produces one row per pool+day.
+    model: int_daily_close
+
+    given:
+      - input: ref('stg_swaps')
+        rows:
+          - pool: "0xpool1"
+            block_number: 10
+            block_time: "2024-01-01 15:00:00"
+            log_index: 0
+            tx_hash: "0xswap1"
+            tick: 200
+            price_token1_in_token0: 3500.0
+            amount0: 1000.0
+            amount1: -0.285
+            liquidity: 100000
+            sender: "0x1111"
+            recipient: "0x1111"
+            token0_symbol: "USDC"
+            token1_symbol: "WETH"
+          - pool: "0xpool1"
+            block_number: 20
+            block_time: "2024-01-02 12:00:00"
+            log_index: 0
+            tx_hash: "0xswap2"
+            tick: 205
+            price_token1_in_token0: 3600.0
+            amount0: 2000.0
+            amount1: -0.555
+            liquidity: 100000
+            sender: "0x2222"
+            recipient: "0x2222"
+            token0_symbol: "USDC"
+            token1_symbol: "WETH"
+
+      - input: ref('stg_pools')
+        rows:
+          - pool: "0xpool1"
+            fee_bps: 0.05
+            tick_spacing: 10
+            token0_address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+            token0_symbol: "USDC"
+            token0_decimals: 6
+            token1_address: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+            token1_symbol: "WETH"
+            token1_decimals: 18
+            deployment_block: 1
+            deployment_ts: "2021-05-05 00:00:00"
+
+    expect:
+      rows:
+        - pool: "0xpool1"
+          date: "2024-01-01"
+          close_tick: 200
+          close_price: 3500.0
+        - pool: "0xpool1"
+          date: "2024-01-02"
+          close_tick: 205
+          close_price: 3600.0
+
+  - name: test_daily_snapshot_blocks_carries_last_swap_state_through_lp_only_days
+    description: >
+      Days with no swap but with LP activity must still appear in the daily spine
+      and carry the most recent swap-derived state forward.
+    model: int_daily_snapshot_blocks
+
+    given:
+      - input: ref('stg_swaps')
+        rows:
+          - pool: "0xpool1"
+            block_number: 10
+            log_index: 0
+            block_time: "2024-01-01 10:15:00"
+            tick: 100
+            price_token1_in_token0: 2000.0
+          - pool: "0xpool1"
+            block_number: 20
+            log_index: 1
+            block_time: "2024-01-03 12:05:00"
+            tick: 110
+            price_token1_in_token0: 2100.0
+
+      - input: ref('int_lp_events')
+        rows:
+          - pool: "0xpool1"
+            block_number: 30
+            block_time: "2024-01-02 13:20:00"
+            tx_hash: "0xlp1"
+            log_index: 0
+            owner: "0xowner1"
+            tick_lower: 90
+            tick_upper: 120
+            liquidity_delta: 1000
+            amount0: 0.0
+            amount1: 0.0
+            event_type: mint
+
+    expect:
+      rows:
+        - pool: "0xpool1"
+          date: "2024-01-01"
+          has_swap_day: 1
+          snapshot_block_number: 10
+          snapshot_log_index: 0
+          snapshot_block_time: "2024-01-01 10:15:00"
+          current_tick: 100
+          price_token1_in_token0: 2000.0
+        - pool: "0xpool1"
+          date: "2024-01-02"
+          has_swap_day: 0
+          snapshot_block_number: 10
+          snapshot_log_index: 0
+          snapshot_block_time: "2024-01-01 10:15:00"
+          current_tick: 100
+          price_token1_in_token0: 2000.0
+        - pool: "0xpool1"
+          date: "2024-01-03"
+          has_swap_day: 1
+          snapshot_block_number: 20
+          snapshot_log_index: 1
+          snapshot_block_time: "2024-01-03 12:05:00"
+          current_tick: 110
+          price_token1_in_token0: 2100.0
+
+  - name: test_position_backtest_entry_liquidity_below_range_starts_all_in_token0
+    description: >
+      When the entry tick is below the chosen range, the simulated position must
+      start fully in token0 and its initial principal value must match committed capital.
+    model: int_position_backtest_entry_liquidity
+
+    given:
+      - input: ref('int_position_backtest_entry_state')
+        rows:
+          - scenario_id: "scenario_1"
+            pool: "0xpool1"
+            start_block: 10
+            end_block: 20
+            tick_lower: 10
+            tick_upper: 20
+            capital_committed_token0: 100.0
+            rebalance_policy: "none"
+            tick_spacing: 1
+            token0_decimals: 0
+            token1_decimals: 0
+            start_snapshot_block_number: 10
+            start_snapshot_log_index: 0
+            start_snapshot_block_time: "2024-01-01 00:00:00"
+            start_tick: 0
+            start_price: 1.0
+            start_sqrt_price: 1.0
+
+    expect:
+      rows:
+        - scenario_id: "scenario_1"
+          start_position_status: "below_range"
+          initial_amount0: 100.0
+          initial_amount1: 0.0
+          initial_principal_value_token0: 100.0
+
+  - name: test_position_backtest_swap_path_accrues_fees_only_when_active
+    description: >
+      The simulated position only earns on swaps where the pre-swap tick is inside the range.
+      Fee share is initial_liquidity / active_liquidity_at_swap.
+    model: int_position_backtest_swap_path
+
+    given:
+      - input: ref('int_position_backtest_entry_liquidity')
+        rows:
+          - scenario_id: "scenario_1"
+            pool: "0xpool1"
+            start_block: 10
+            end_block: 20
+            tick_lower: 90
+            tick_upper: 110
+            capital_committed_token0: 100.0
+            rebalance_policy: "none"
+            tick_spacing: 10
+            token0_decimals: 6
+            token1_decimals: 18
+            start_snapshot_block_number: 10
+            start_snapshot_log_index: 0
+            start_snapshot_block_time: "2024-01-01 00:00:00"
+            start_tick: 100
+            start_price: 2000.0
+            start_sqrt_price: 1.0
+            start_position_status: "in_range"
+            unit_amount0: 1.0
+            unit_amount1: 0.0
+            unit_position_value_token0: 1.0
+            initial_liquidity: 10.0
+            initial_amount0: 100.0
+            initial_amount1: 0.0
+            initial_principal_value_token0: 100.0
+
+      - input: ref('int_swaps_enriched')
+        rows:
+          - pool: "0xpool1"
+            block_number: 11
+            log_index: 0
+            block_time: "2024-01-01 00:01:00"
+            tick_before: 100
+            price_before: 2000.0
+            tick_after: 101
+            price_after: 2001.0
+            next_block_time: "2024-01-01 00:02:00"
+            active_liquidity_at_swap: 100.0
+            token0_in: 1000.0
+            token1_in: 0.0
+            fees_generated_token0: 1.0
+            fees_generated_token1: 0.0
+            fees_generated_token0_equiv: 1.0
+          - pool: "0xpool1"
+            block_number: 12
+            log_index: 0
+            block_time: "2024-01-01 00:02:00"
+            tick_before: 120
+            price_before: 2001.0
+            tick_after: 119
+            price_after: 1999.0
+            next_block_time: "2024-01-01 00:03:00"
+            active_liquidity_at_swap: 100.0
+            token0_in: 2000.0
+            token1_in: 0.0
+            fees_generated_token0: 2.0
+            fees_generated_token1: 0.0
+            fees_generated_token0_equiv: 2.0
+
+    expect:
+      rows:
+        - scenario_id: "scenario_1"
+          block_number: 11
+          is_active_before_swap: 1
+          position_fee_share: 0.1
+          fees_accrued_token0: 0.1
+          fees_accrued_token0_equiv_generated: 0.1
+        - scenario_id: "scenario_1"
+          block_number: 12
+          is_active_before_swap: 0
+          position_fee_share: null
+          fees_accrued_token0: 0.0
+          fees_accrued_token0_equiv_generated: 0.0

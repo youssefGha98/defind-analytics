@@ -1,0 +1,24 @@
+version: 2
+
+sources:
+  - name: analytics
+    database: analytics
+    schema: analytics
+    description: "External S3 tables pointing to Cloudflare R2"
+    tables:
+      - name: uniswap_usdc_weth_swap
+        description: "Swap events — USDC/WETH 0.05% pool"
+      - name: uniswap_usdc_weth_mint
+        description: "Mint events — USDC/WETH 0.05% pool"
+      - name: uniswap_usdc_weth_burn
+        description: "Burn events — USDC/WETH 0.05% pool"
+      - name: pools
+        description: "Pool metadata (token symbols, decimals, tick_spacing, deployment block and timestamp)"
+      - name: uniswap_nfpm_transfer
+        description: "Uniswap V3 NFPM Transfer events"
+      - name: uniswap_nfpm_increase_liquidity
+        description: "Uniswap V3 NFPM IncreaseLiquidity events"
+      - name: uniswap_nfpm_decrease_liquidity
+        description: "Uniswap V3 NFPM DecreaseLiquidity events"
+      - name: uniswap_nfpm_collect
+        description: "Uniswap V3 NFPM Collect events"

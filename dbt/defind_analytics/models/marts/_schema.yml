@@ -1,0 +1,555 @@
+models:
+
+  - name: mart_tvl_daily
+    description: >
+      Exact total V3 TVL per pool per day, denominated in token0, token1, and token0_equiv.
+      Equals USD only when token0 is a known stablecoin (e.g. USDC).
+    columns:
+      - name: pool
+        tests: [not_null]
+      - name: date
+        tests: [not_null]
+      - name: tvl_token0
+        tests: [not_null]
+      - name: tvl_token1
+        tests: [not_null]
+      - name: tvl_token0_equiv
+        tests: [not_null]
+
+  - name: mart_tvl_current
+    description: >
+      Current pool TVL snapshot at the latest observed state.
+      Exposes total, active (in-range), and out-of-range TVL in token0, plus
+      the current active-bin breakdown from mart_tvl_distribution.
+      total_tvl_token0 is a V3 principal/liquidity valuation, not a raw pool-balance view.
+    columns:
+      - name: pool
+        tests: [not_null]
+      - name: current_tick
+        tests: [not_null]
+      - name: price_token1_in_token0
+        tests: [not_null]
+      - name: total_tvl_token0
+        tests: [not_null]
+      - name: active_tvl_token0
+        tests: [not_null]
+      - name: out_of_range_tvl_token0
+        tests: [not_null]
+      - name: tvl_reconciliation_gap
+        tests: [not_null]
+      - name: current_bin_liquidity
+        tests: [not_null]
+      - name: current_bin_token0
+        tests: [not_null]
+      - name: current_bin_token1
+        tests: [not_null]
+      - name: current_bin_token0_in_token0
+        tests: [not_null]
+      - name: current_bin_token1_in_token0
+        tests: [not_null]
+      - name: current_bin_tvl_token0
+        tests: [not_null]
+
+  - name: mart_tvl_block_snapshot
+    description: >
+      Exact pool TVL snapshot at a target block, using end-of-block semantics.
+      total_tvl_token0 is reused from mart_tvl_distribution at the same target_block;
+      active and out-of-range TVL are computed from open ranges whose liquidity remains
+      positive up to that block. For the latest state, omit target_block and the model
+      defaults to the latest observed swap block.
+    columns:
+      - name: pool
+        tests: [not_null]
+      - name: target_block
+        tests: [not_null]
+      - name: current_tick
+        tests: [not_null]
+      - name: price_token1_in_token0
+        tests: [not_null]
+      - name: total_tvl_token0
+        tests: [not_null]
+      - name: active_tvl_token0
+        tests: [not_null]
+      - name: out_of_range_tvl_token0
+        tests: [not_null]
+      - name: tvl_reconciliation_gap
+        tests: [not_null]
+      - name: current_bin_liquidity
+        tests: [not_null]
+      - name: current_bin_token0
+        tests: [not_null]
+      - name: current_bin_token1
+        tests: [not_null]
+      - name: current_bin_token0_in_token0
+        tests: [not_null]
+      - name: current_bin_token1_in_token0
+        tests: [not_null]
+      - name: current_bin_tvl_token0
+        tests: [not_null]
+
+  - name: mart_tvl_distribution_hourly_centered
+    description: >
+      Hourly centered local TVL/liquidity distribution around the current tick.
+      Each row is a tick bin that overlaps a configurable window around the hour-end
+      current tick. pct_visible_* are normalized inside that visible centered window.
+    columns:
+      - name: pool
+        tests: [not_null]
+      - name: date
+        tests: [not_null]
+      - name: hour
+        tests: [not_null]
+      - name: current_tick
+        tests: [not_null]
+      - name: price_token1_in_token0
+        tests: [not_null]
+      - name: tick_lower
+        tests: [not_null]
+      - name: tick_upper
+        tests: [not_null]
+      - name: liquidity
+        tests: [not_null]
+      - name: is_active_bin
+        tests: [not_null]
+      - name: amount0
+        tests: [not_null]
+      - name: amount1
+        tests: [not_null]
+      - name: tvl_token0
+        tests: [not_null]
+      - name: pct_visible_liquidity
+        tests: [not_null]
+      - name: pct_visible_tvl
+        tests: [not_null]
+
+  - name: mart_tvl_distribution_hourly_metrics
+    description: >
+      Hourly summary metrics derived from the centered local TVL distribution.
+      Designed for time-series charts that measure concentration and recentering
+      around the current tick.
+    columns:
+      - name: pool
+        tests: [not_null]
+      - name: date
+        tests: [not_null]
+      - name: hour
+        tests: [not_null]
+      - name: current_tick
+        tests: [not_null]
+      - name: price_token1_in_token0
+        tests: [not_null]
+      - name: visible_tvl_token0
+        tests: [not_null]
+      - name: current_bin_tvl_token0
+        tests: [not_null]
+      - name: current_bin_liquidity
+        tests: [not_null]
+      - name: current_bin_share_visible
+        tests: [not_null]
+      - name: share_overlapping_50_ticks
+        tests: [not_null]
+      - name: share_overlapping_100_ticks
+        tests: [not_null]
+      - name: share_overlapping_250_ticks
+        tests: [not_null]
+      - name: share_overlapping_500_ticks
+        tests: [not_null]
+      - name: weighted_mean_relative_tick
+        tests: [not_null]
+      - name: weighted_abs_relative_tick
+        tests: [not_null]
+      - name: weighted_std_relative_tick
+        tests: [not_null]
+
+  - name: mart_tvl_distribution_daily_centered
+    description: >
+      Daily centered local TVL/liquidity distribution around the current tick.
+      Each row is a tick bin that overlaps a configurable window around the day-end
+      current tick. pct_visible_* are normalized inside that visible centered window.
+    columns:
+      - name: pool
+        tests: [not_null]
+      - name: date
+        tests: [not_null]
+      - name: current_tick
+        tests: [not_null]
+      - name: price_token1_in_token0
+        tests: [not_null]
+      - name: tick_lower
+        tests: [not_null]
+      - name: tick_upper
+        tests: [not_null]
+      - name: liquidity
+        tests: [not_null]
+      - name: is_active_bin
+        tests: [not_null]
+      - name: amount0
+        tests: [not_null]
+      - name: amount1
+        tests: [not_null]
+      - name: tvl_token0
+        tests: [not_null]
+      - name: pct_visible_liquidity
+        tests: [not_null]
+      - name: pct_visible_tvl
+        tests: [not_null]
+
+  - name: mart_tvl_distribution_daily_metrics
+    description: >
+      Daily summary metrics derived from the centered local TVL distribution.
+      Designed for slower-moving time-series charts that measure concentration and
+      recentering around the current tick.
+    columns:
+      - name: pool
+        tests: [not_null]
+      - name: date
+        tests: [not_null]
+      - name: current_tick
+        tests: [not_null]
+      - name: price_token1_in_token0
+        tests: [not_null]
+      - name: visible_tvl_token0
+        tests: [not_null]
+      - name: current_bin_tvl_token0
+        tests: [not_null]
+      - name: current_bin_liquidity
+        tests: [not_null]
+      - name: current_bin_share_visible
+        tests: [not_null]
+      - name: share_overlapping_50_ticks
+        tests: [not_null]
+      - name: share_overlapping_100_ticks
+        tests: [not_null]
+      - name: share_overlapping_250_ticks
+        tests: [not_null]
+      - name: share_overlapping_500_ticks
+        tests: [not_null]
+      - name: weighted_mean_relative_tick
+        tests: [not_null]
+      - name: weighted_abs_relative_tick
+        tests: [not_null]
+      - name: weighted_std_relative_tick
+        tests: [not_null]
+
+  - name: mart_volume_daily
+    description: >
+      Daily swap volume and generated fees per pool.
+      Fees are computed exactly at the swap level: token0 fees stay in token0,
+      token1 fees are converted to token0 at each swap's price_token1_in_token0.
+      All _token0_equiv values equal USD only when token0 is a known stablecoin.
+    columns:
+      - name: pool
+        tests: [not_null]
+      - name: date
+        tests: [not_null]
+      - name: volume_token0
+        tests: [not_null]
+      - name: volume_token1
+        tests: [not_null]
+      - name: volume_token0_equiv
+        tests: [not_null]
+      - name: fees_token0
+        tests: [not_null]
+      - name: fees_token1
+        tests: [not_null]
+      - name: fees_token0_equiv
+        tests: [not_null]
+      - name: swap_count
+        tests: [not_null]
+
+  - name: mart_fee_yield_daily
+    description: >
+      Daily fee APR per pool, computed on active (in-range) TVL denominated in token0.
+      APR = fees_token0_equiv * 365 / active_tvl_token0.
+      Equals USD-denominated APR only when token0 is a known stablecoin.
+    columns:
+      - name: pool
+        tests: [not_null]
+      - name: date
+        tests: [not_null]
+      - name: tvl_total_token0
+        tests: [not_null]
+      - name: tvl_active_token0
+        tests: [not_null]
+      - name: fees_token0_equiv
+        tests: [not_null]
+
+  - name: mart_price_analytics_daily
+    description: >
+      Daily price analytics per pool from int_daily_close_dense, including carry-forward days,
+      rolling realized volatility (7d, 30d annualized), and drawdown from running high.
+    columns:
+      - name: pool
+        tests: [not_null]
+      - name: date
+        tests: [not_null]
+      - name: close_tick
+        tests: [not_null]
+      - name: close_price
+        tests: [not_null]
+      - name: has_swap
+        tests: [not_null]
+      - name: rolling_high
+        tests: [not_null]
+
+  - name: mart_price_intraday
+    description: >
+      Hourly OHLCV mart per pool derived from swap events.
+      Includes within-day intraday realized volatility (stddev of hourly log returns).
+    columns:
+      - name: pool
+        tests: [not_null]
+      - name: date
+        tests: [not_null]
+      - name: hour
+        tests: [not_null]
+      - name: open_price
+        tests: [not_null]
+      - name: high_price
+        tests: [not_null]
+      - name: low_price
+        tests: [not_null]
+      - name: close_price
+        tests: [not_null]
+      - name: volume_token0_equiv
+        tests: [not_null]
+      - name: swap_count
+        tests: [not_null]
+
+  - name: mart_tick_daily
+    description: >
+      Daily aggregate of tick sessions per pool.
+      Time in seconds and volume in token0 per tick per day (closed sessions only).
+      Open sessions (last session, unknown duration) are excluded.
+    columns:
+      - name: pool
+        tests: [not_null]
+      - name: date
+        tests: [not_null]
+      - name: tick
+        tests: [not_null]
+      - name: time_seconds
+        tests: [not_null]
+
+  - name: mart_tick_liquidity_volume_daily
+    description: >
+      Daily tick-level flow aligned with daily tick liquidity.
+      Exposes end-of-day and TWAP liquidity denominators plus the daily
+      distribution of hourly sigma_evc variants.
+    columns:
+      - name: pool
+        tests: [not_null]
+      - name: date
+        tests: [not_null]
+      - name: tick
+        tests: [not_null]
+      - name: tick_liquidity_end
+        tests: [not_null]
+      - name: tick_liquidity
+        tests: [not_null]
+      - name: volume_token0_equiv
+        tests: [not_null]
+      - name: volume_per_tick_liquidity_last
+        tests: [not_null]
+      - name: sigma_evc_last
+        tests: [not_null]
+
+  - name: mart_tick_sigma_evc_hourly
+    description: >
+      Hourly tick-level sigma_evc based on exact hourly flow and hour-end
+      liquidity snapshots.
+    columns:
+      - name: pool
+        tests: [not_null]
+      - name: date
+        tests: [not_null]
+      - name: hour
+        tests: [not_null]
+      - name: tick
+        tests: [not_null]
+      - name: tick_liquidity_end
+        tests: [not_null]
+      - name: volume_token0_equiv
+        tests: [not_null]
+      - name: volume_per_tick_liquidity_last
+        tests: [not_null]
+      - name: sigma_evc_last
+        tests: [not_null]
+
+  - name: mart_tick_sigma_evc_weekly
+    description: >
+      Weekly tick-level sigma_evc based on weekly flow, week-end liquidity, daily
+      liquidity TWAP, and weekly distributions of daily sigma_evc_last.
+    columns:
+      - name: pool
+        tests: [not_null]
+      - name: week_start
+        tests: [not_null]
+      - name: tick
+        tests: [not_null]
+      - name: tick_liquidity_end
+        tests: [not_null]
+      - name: volume_token0_equiv
+        tests: [not_null]
+      - name: volume_per_tick_liquidity_last
+        tests: [not_null]
+      - name: sigma_evc_last
+        tests: [not_null]
+
+  - name: mart_position_backtest_summary
+    description: >
+      Summary mart for simulated LP position backtests.
+      Exposes entry state, exit state, accrued fees, observed time-in-range metrics,
+      and performance decomposition versus initial capital and HODL.
+    columns:
+      - name: scenario_id
+        tests: [not_null]
+      - name: pool
+        tests: [not_null]
+      - name: start_block
+        tests: [not_null]
+      - name: end_block
+        tests: [not_null]
+      - name: tick_lower
+        tests: [not_null]
+      - name: tick_upper
+        tests: [not_null]
+      - name: capital_committed_token0
+        tests: [not_null]
+
+  - name: mart_nfpm_positions_current
+    description: >
+      Current state of each mapped NFPM tokenId on the tracked pool. Exposes owner,
+      signed liquidity state, collect totals, transfer lifecycle, and current
+      mark-to-market valuation of still-deployed liquidity.
+    columns:
+      - name: token_id
+        tests: [not_null]
+      - name: pool
+        tests: [not_null]
+      - name: tick_lower
+        tests: [not_null]
+      - name: tick_upper
+        tests: [not_null]
+      - name: current_owner
+        tests: [not_null]
+      - name: is_current_owner_burn_like
+        tests: [not_null]
+      - name: current_liquidity_raw
+        tests: [not_null]
+      - name: is_open
+        tests: [not_null]
+      - name: is_active
+        tests: [not_null]
+      - name: current_position_amount0
+        tests: [not_null]
+      - name: current_position_amount1
+        tests: [not_null]
+      - name: current_position_token0
+        tests: [not_null]
+      - name: total_principal_collected_amount0
+        tests: [not_null]
+      - name: total_principal_collected_amount1
+        tests: [not_null]
+      - name: total_fees_collected_amount0
+        tests: [not_null]
+      - name: total_fees_collected_amount1
+        tests: [not_null]
+
+  - name: mart_nfpm_open_positions_current
+    description: >
+      Open subset of current NFPM positions: one row per tokenId whose current
+      net liquidity is still positive.
+    columns:
+      - name: token_id
+        tests: [not_null]
+      - name: pool
+        tests: [not_null]
+      - name: current_owner
+        tests: [not_null]
+      - name: current_liquidity_raw
+        tests: [not_null]
+      - name: current_position_token0
+        tests: [not_null]
+
+  - name: mart_nfpm_position_lifecycle
+    description: >
+      Lifecycle summary per mapped NFPM tokenId, combining current state, transfer
+      history, collect timing, liquidity timing, and principal-first collect
+      decomposition into one row per position.
+    columns:
+      - name: token_id
+        tests: [not_null]
+      - name: pool
+        tests: [not_null]
+      - name: lifecycle_status
+        tests: [not_null]
+      - name: is_open
+        tests: [not_null]
+      - name: is_active
+        tests: [not_null]
+      - name: is_nft_burned
+        tests: [not_null]
+      - name: is_current_owner_burn_like
+        tests: [not_null]
+      - name: observed_lifetime_seconds
+        tests: [not_null]
+
+  - name: mart_nfpm_position_pnl_current
+    description: >
+      Current token0-denominated PnL summary per mapped NFPM tokenId. Principal,
+      collected fees, uncollected fees, lot-based HODL benchmark, and impermanent
+      loss are exposed separately. Summing wealth across
+      all tokenIds is not comparable to current pool TVL because closed/burned
+      positions remain part of the historical population.
+    columns:
+      - name: token_id
+        tests: [not_null]
+      - name: pool
+        tests: [not_null]
+      - name: current_owner
+        tests: [not_null]
+      - name: is_current_owner_burn_like
+        tests: [not_null]
+      - name: lot_count
+        tests: [not_null]
+      - name: valid_lot_benchmark_count
+        tests: [not_null]
+      - name: missing_lot_benchmark_count
+        tests: [not_null]
+      - name: is_lot_benchmark_valid
+        tests: [not_null]
+      - name: is_mint_anchored_benchmark_valid
+        tests: [not_null]
+      - name: entry_state_missing
+        tests: [not_null]
+      - name: current_price_token1_in_token0
+        tests: [not_null]
+      - name: current_deployed_principal_token0
+        tests: [not_null]
+      - name: current_principal_owed_amount0
+        tests: [not_null]
+      - name: current_principal_owed_amount1
+        tests: [not_null]
+      - name: principal_owed_token0_equiv_current
+        tests: [not_null]
+      - name: total_fees_accrued_amount0
+        tests: [not_null]
+      - name: total_fees_accrued_amount1
+        tests: [not_null]
+      - name: current_collected_fee_wealth_token0
+        tests: [not_null]
+      - name: current_uncollected_fee_wealth_token0
+        tests: [not_null]
+      - name: current_fee_wealth_token0
+        tests: [not_null]
+      - name: current_principal_wealth_token0
+        tests: [not_null]
+      - name: current_total_wealth_token0
+        tests: [not_null]
+      - name: observed_time_in_range_seconds
+        tests: [not_null]
+      - name: observed_window_seconds
+        tests: [not_null]
+      - name: observed_out_of_range_seconds
+        tests: [not_null]

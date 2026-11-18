@@ -1,0 +1,88 @@
+version: 2
+
+models:
+  - name: stg_nfpm_transfers
+    description: >
+      Staged Uniswap V3 NFPM Transfer events. Keeps token ownership transfers in
+      raw token-id space before any pool mapping.
+    columns:
+      - name: tx_hash
+        tests: [not_null]
+      - name: block_number
+        tests: [not_null]
+      - name: log_index
+        tests: [not_null]
+      - name: block_time
+        tests: [not_null]
+      - name: token_id
+        tests: [not_null]
+      - name: from_address
+        tests: [not_null]
+      - name: to_address
+        tests: [not_null]
+
+  - name: stg_nfpm_increase_liquidity
+    description: >
+      Staged NFPM IncreaseLiquidity events with raw integer token amounts and
+      raw liquidity deltas, before any pool-specific scaling.
+    columns:
+      - name: tx_hash
+        tests: [not_null]
+      - name: block_number
+        tests: [not_null]
+      - name: log_index
+        tests: [not_null]
+      - name: block_time
+        tests: [not_null]
+      - name: token_id
+        tests: [not_null]
+      - name: liquidity_delta_raw
+        tests: [not_null]
+      - name: amount0_raw
+        tests: [not_null]
+      - name: amount1_raw
+        tests: [not_null]
+
+  - name: stg_nfpm_decrease_liquidity
+    description: >
+      Staged NFPM DecreaseLiquidity events with raw integer token amounts and
+      raw liquidity deltas, before any pool-specific scaling.
+    columns:
+      - name: tx_hash
+        tests: [not_null]
+      - name: block_number
+        tests: [not_null]
+      - name: log_index
+        tests: [not_null]
+      - name: block_time
+        tests: [not_null]
+      - name: token_id
+        tests: [not_null]
+      - name: liquidity_delta_raw
+        tests: [not_null]
+      - name: amount0_raw
+        tests: [not_null]
+      - name: amount1_raw
+        tests: [not_null]
+
+  - name: stg_nfpm_collects
+    description: >
+      Staged NFPM Collect events with raw integer token amounts, before any
+      pool-specific scaling.
+    columns:
+      - name: tx_hash
+        tests: [not_null]
+      - name: block_number
+        tests: [not_null]
+      - name: log_index
+        tests: [not_null]
+      - name: block_time
+        tests: [not_null]
+      - name: token_id
+        tests: [not_null]
+      - name: recipient
+        tests: [not_null]
+      - name: amount0_raw
+        tests: [not_null]
+      - name: amount1_raw
+        tests: [not_null]
